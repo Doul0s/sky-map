@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../app/theme/app_colors.dart';
 import '../astronomy/sky_coordinates.dart';
 import '../blocs/sky/sky_state.dart';
 import '../models/constellation.dart';
@@ -15,6 +16,8 @@ class SkyPainter extends CustomPainter {
   final List<Constellation> constellations;
   final bool showHorizon;
   final bool showConstellations;
+  final bool objectSelectionEnabled;
+  final int? selectedStarId;
 
   const SkyPainter({
     required this.orientation,
@@ -23,6 +26,8 @@ class SkyPainter extends CustomPainter {
     required this.constellations,
     this.showHorizon = true,
     this.showConstellations = true,
+    this.objectSelectionEnabled = false,
+    this.selectedStarId,
   });
 
   @override
@@ -59,9 +64,30 @@ class SkyPainter extends CustomPainter {
       );
     }
 
+    // The selected star's constellation is always shown, brighter than
+    // the normal lines, even if "Stars" (constellations) is toggled off.
+    final highlightedConstellation =
+        _selectedConstellation();
+
+    if (highlightedConstellation != null) {
+      _drawHighlightedConstellation(
+        canvas,
+        starWorldVectors,
+        size,
+        center,
+        highlightedConstellation,
+      );
+    }
+
     if (showHorizon) {
       _drawHorizon(
         canvas,
+        size,
+      );
+
+      _drawCompassLabels(
+        canvas,
+        center,
         size,
       );
     }
@@ -167,9 +193,7 @@ class SkyPainter extends CustomPainter {
     }
 
     final paint = Paint()
-      ..color = Colors.white.withValues(
-        alpha: 0.22,
-      )
+      ..color = AppColors.accent.withValues(alpha: 0.45)
       ..strokeWidth = 1.0
       ..style = PaintingStyle.stroke;
 
@@ -184,6 +208,59 @@ class SkyPainter extends CustomPainter {
           size: size,
         );
       }
+    }
+  }
+
+  Constellation? _selectedConstellation() {
+    if (selectedStarId == null) {
+      return null;
+    }
+
+    SkyStar? selectedStar;
+
+    for (final star in stars) {
+      if (star.id == selectedStarId) {
+        selectedStar = star;
+        break;
+      }
+    }
+
+    final constellationId = selectedStar?.constellation;
+
+    if (constellationId == null) {
+      return null;
+    }
+
+    for (final constellation in constellations) {
+      if (constellation.id == constellationId) {
+        return constellation;
+      }
+    }
+
+    return null;
+  }
+
+  void _drawHighlightedConstellation(
+    Canvas canvas,
+    Map<int, List<double>> starWorldPositions,
+    Size size,
+    Offset center,
+    Constellation constellation,
+  ) {
+    final paint = Paint()
+      ..color = AppColors.accentBright
+      ..strokeWidth = 1.6
+      ..style = PaintingStyle.stroke;
+
+    for (final line in constellation.lines) {
+      _drawConstellationLine(
+        canvas: canvas,
+        paint: paint,
+        line: line,
+        starWorldPositions: starWorldPositions,
+        center: center,
+        size: size,
+      );
     }
   }
 
@@ -379,11 +456,31 @@ class SkyPainter extends CustomPainter {
     final paint = Paint()
       ..style = PaintingStyle.fill;
 
+    final highlightPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.2;
+
     for (final star in stars) {
       final position = positions[star.id];
 
       if (position == null) {
         continue;
+      }
+
+      final radius = _starRadius(star.magnitude);
+
+      if (objectSelectionEnabled && star.isInteractable) {
+        final isSelected = star.id == selectedStarId;
+
+        highlightPaint.color = isSelected
+            ? AppColors.accentBright
+            : AppColors.accent.withValues(alpha: 0.55);
+
+        canvas.drawCircle(
+          position,
+          radius + (isSelected ? 7 : 5),
+          highlightPaint,
+        );
       }
 
       paint.color = _starColor(
@@ -392,7 +489,7 @@ class SkyPainter extends CustomPainter {
 
       canvas.drawCircle(
         position,
-        _starRadius(star.magnitude),
+        radius,
         paint,
       );
     }
@@ -459,9 +556,7 @@ class SkyPainter extends CustomPainter {
     );
 
     final paint = Paint()
-      ..color = const Color.fromARGB(255, 115, 94, 139).withValues(
-        alpha: 0.55,
-      )
+      ..color = AppColors.accent.withValues(alpha: 0.55)
       ..strokeWidth = 1.2
       ..style = PaintingStyle.stroke;
 
@@ -497,6 +592,67 @@ class SkyPainter extends CustomPainter {
     }
   }
 
+  // Cardinal letters, positioned right on the horizon ring at their
+  // azimuth (N=0, E=90, S=180, W=270), reusing the same star
+  // projection so they track device orientation like everything else.
+  static const _compassLabels = [
+    (0.0, 'N'),
+    (90.0, 'E'),
+    (180.0, 'S'),
+    (270.0, 'W'),
+  ];
+
+  void _drawCompassLabels(
+    Canvas canvas,
+    Offset center,
+    Size size,
+  ) {
+    for (final (azimuth, label) in _compassLabels) {
+      final world = SkyCoordinates.horizontalToVector(
+        azimuth: azimuth,
+        altitude: 0,
+      );
+
+      final point = _projectStar(world, center, size);
+
+      if (point == null) {
+        continue;
+      }
+
+      _drawCompassLabel(canvas, label, point);
+    }
+  }
+
+  void _drawCompassLabel(
+    Canvas canvas,
+    String label,
+    Offset position,
+  ) {
+    final textPainter = TextPainter(
+      text: TextSpan(
+        text: label,
+        style: TextStyle(
+          color: AppColors.accentBright,
+          fontSize: 13,
+          fontWeight: FontWeight.w700,
+          shadows: const [
+            Shadow(color: Colors.black, blurRadius: 4),
+          ],
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+
+    textPainter.paint(
+      canvas,
+      position -
+          Offset(
+            textPainter.width / 2,
+            textPainter.height / 2,
+          ),
+    );
+  }
+
   // Leaves a small gap at the center so the exact point being aimed at
   // isn't covered by the reticle itself.
   void _drawCenterMarker(
@@ -509,9 +665,7 @@ class SkyPainter extends CustomPainter {
     );
 
     final paint = Paint()
-      ..color = const Color.fromARGB(255, 110, 94, 139).withValues(
-        alpha: 0.65,
-      )
+      ..color = AppColors.accent.withValues(alpha: 0.65)
       ..strokeWidth = 1.0;
 
     const gap = 3.0;
@@ -566,7 +720,10 @@ class SkyPainter extends CustomPainter {
         oldDelegate.showHorizon !=
             showHorizon ||
         oldDelegate.showConstellations !=
-            showConstellations;
+            showConstellations ||
+        oldDelegate.objectSelectionEnabled !=
+            objectSelectionEnabled ||
+        oldDelegate.selectedStarId != selectedStarId;
   }
 }
 

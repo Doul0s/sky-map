@@ -9,6 +9,8 @@ import '../services/location_service.dart';
 import '../services/orientation_service.dart';
 import '../widgets/sky_dock.dart';
 import '../widgets/sky_painter.dart';
+import '../widgets/star_hit_tester.dart';
+import '../widgets/star_info_panel.dart';
 import '../services/star_catalog_service.dart';
 
 class SkyScreen extends StatelessWidget {
@@ -127,19 +129,55 @@ class _LoadedView extends StatelessWidget {
         child: Stack(
           fit: StackFit.expand,
           children: [
-            CustomPaint(
-              painter: SkyPainter(
-                stars: state.stars,
-                starVectors: state.starVectors,
-                constellations:
-                    state.constellations,
-                orientation: orientation,
-                showHorizon:
-                    state.showHorizon,
-                showConstellations:
-                    state.showConstellations,
-              ),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final size = Size(
+                  constraints.maxWidth,
+                  constraints.maxHeight,
+                );
+
+                return GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTapUp: (details) => _handleTap(
+                    context,
+                    details.localPosition,
+                    size,
+                  ),
+                  child: CustomPaint(
+                    painter: SkyPainter(
+                      stars: state.stars,
+                      starVectors: state.starVectors,
+                      constellations:
+                          state.constellations,
+                      orientation: orientation,
+                      showHorizon:
+                          state.showHorizon,
+                      showConstellations:
+                          state.showConstellations,
+                      objectSelectionEnabled:
+                          state.objectSelectionEnabled,
+                      selectedStarId:
+                          state.selectedStarId,
+                    ),
+                  ),
+                );
+              },
             ),
+
+            if (state.selectedStar != null)
+              Positioned(
+                top: 12,
+                left: 0,
+                right: 0,
+                child: Center(
+                  child: StarInfoPanel(
+                    star: state.selectedStar!,
+                    onClose: () => context
+                        .read<SkyBloc>()
+                        .add(const SkyStarTapped(null)),
+                  ),
+                ),
+              ),
 
             const Positioned(
               left: 0,
@@ -153,5 +191,34 @@ class _LoadedView extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  void _handleTap(
+    BuildContext context,
+    Offset localPosition,
+    Size size,
+  ) {
+    if (!state.objectSelectionEnabled &&
+        state.selectedStarId == null) {
+      return;
+    }
+
+    final center = Offset(
+      size.width / 2,
+      size.height / 2,
+    );
+
+    final tappedId = state.objectSelectionEnabled
+        ? StarHitTester.findTappedStar(
+            tapPosition: localPosition,
+            stars: state.stars,
+            starVectors: state.starVectors,
+            orientation: state.orientation!,
+            center: center,
+            size: size,
+          )
+        : null;
+
+    context.read<SkyBloc>().add(SkyStarTapped(tappedId));
   }
 }

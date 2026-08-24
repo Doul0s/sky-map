@@ -3,11 +3,10 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../app/theme/app_colors.dart';
 import '../blocs/sky/sky_bloc.dart';
 import '../blocs/sky/sky_event.dart';
 import '../blocs/sky/sky_state.dart';
-
-const _accent = Color.fromARGB(255, 110, 94, 139);
 
 class SkyDock extends StatelessWidget {
   const SkyDock({super.key});
@@ -27,10 +26,10 @@ class SkyDock extends StatelessWidget {
             filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
             child: DecoratedBox(
               decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.45),
+                color: AppColors.glassBackground,
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
-                  color: Colors.white.withValues(alpha: 0.10),
+                  color: AppColors.glassBorder,
                   width: 1,
                 ),
               ),
@@ -96,7 +95,7 @@ class _DockToggle extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(8),
-        splashColor: _accent.withValues(alpha: 0.18),
+        splashColor: AppColors.accent.withValues(alpha: 0.18),
         highlightColor: Colors.white.withValues(alpha: 0.04),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 6),
@@ -109,12 +108,12 @@ class _DockToggle extends StatelessWidget {
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(8),
               color: active
-                  ? _accent.withValues(alpha: 0.20)
+                  ? AppColors.accent.withValues(alpha: 0.20)
                   : Colors.transparent,
               boxShadow: active
                   ? [
                       BoxShadow(
-                        color: _accent.withValues(alpha: 0.35),
+                        color: AppColors.accent.withValues(alpha: 0.35),
                         blurRadius: 14,
                         spreadRadius: -2,
                       ),
@@ -124,12 +123,12 @@ class _DockToggle extends StatelessWidget {
             child: AnimatedDefaultTextStyle(
               duration: const Duration(milliseconds: 200),
               style: TextStyle(
-                color: active ? Colors.white : Colors.white38,
+                color: active ? AppColors.textPrimary : Colors.white38,
               ),
               child: Icon(
                 icon,
                 size: 22,
-                color: active ? Colors.white : Colors.white38,
+                color: active ? AppColors.textPrimary : Colors.white38,
               ),
             ),
           ),

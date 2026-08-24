@@ -41,6 +41,7 @@ class SkyBloc extends Bloc<SkyEvent, SkyState> {
     on<SkyObjectSelectionToggled>(
       _onObjectSelectionToggled,
     );
+    on<SkyStarTapped>(_onStarTapped);
   }
 
   Future<void> _onLoadRequested(
@@ -165,6 +166,25 @@ class SkyBloc extends Bloc<SkyEvent, SkyState> {
       state.copyWith(
         objectSelectionEnabled:
             !state.objectSelectionEnabled,
+        clearSelection: true,
+      ),
+    );
+  }
+
+  // Tapping the currently selected star again closes its info window;
+  // tapping a different star switches to it; tapping empty sky (starId
+  // == null) closes whatever is open.
+  void _onStarTapped(
+    SkyStarTapped event,
+    Emitter<SkyState> emit,
+  ) {
+    final isSameStar = event.starId != null &&
+        event.starId == state.selectedStarId;
+
+    emit(
+      state.copyWith(
+        selectedStarId: isSameStar ? null : event.starId,
+        clearSelection: event.starId == null || isSameStar,
       ),
     );
   }

@@ -37,3 +37,12 @@ final class SkyConstellationsToggled extends SkyEvent {
 final class SkyObjectSelectionToggled extends SkyEvent {
   const SkyObjectSelectionToggled();
 }
+
+final class SkyStarTapped extends SkyEvent {
+  final int? starId;
+
+  const SkyStarTapped(this.starId);
+
+  @override
+  List<Object?> get props => [starId];
+}

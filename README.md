@@ -1,17 +1,43 @@
-# skymap
+# Sky Map — Technical Reference & Architecture
 
-A new Flutter project.
+**A sensor-driven astronomical visualization for Flutter & Android**
 
-## Getting Started
+---
 
-This project is a starting point for a Flutter application.
+## Overview
 
-A few resources to get you started if this is your first Flutter project:
+Sky Map turns your phone into a window to the stars. It combines:
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+- Your GPS location
+- A catalog of star positions
+- The current time and Earth's rotation
+- Your phone's orientation sensors
+- Interactive 3D rendering
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+The core idea is simple: **calculate the sky slowly, update the view fast.**
+
+---
+
+## How It Works — The Big Picture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                         YOUR PHONE                              │
+│                                                                 │
+│   ┌─────────────┐    ┌─────────────┐    ┌─────────────┐         │
+│   │    GPS      │    │    Clock    │    │   Sensors   │         │
+│   │  Location   │    │     UTC     │    │  Rotation   │         │
+│   └──────┬──────┘    └──────┬──────┘    └──────┬──────┘         │
+│          │                  │                  │                │
+│          ▼                  ▼                  ▼                │
+│   ┌──────────────────────────────────────────────────┐          │
+│   │              Sky Engine                          │          │
+│   │  • Converts star positions to local sky          │          │
+│   │  • Computes horizon & constellations             │          │
+│   │  • Projects everything onto your screen          │          │
+│   └──────────────────────────────────────────────────┘          │
+│                              │                                  │
+│                              ▼                                  │
+│                    ⭐ You see the stars!                        │
+└─────────────────────────────────────────────────────────────────┘
+```

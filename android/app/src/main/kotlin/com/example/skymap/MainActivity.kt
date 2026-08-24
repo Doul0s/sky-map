@@ -152,26 +152,30 @@ class MainActivity : FlutterActivity(), SensorEventListener {
         }
 
         /*
-         * Android rotation matrix:
+         * Android rotation matrix (row-major, world = R * device):
          *
-         * Column 0 = device X / right
-         * Column 1 = device Y / up
-         * Column 2 = device Z / screen
+         * Row 0 = World X = East
+         * Row 1 = World Y = North
+         * Row 2 = World Z = Up
          *
-         * We want the BACK of the phone,
-         * therefore use -Z.
+         * (This is Android's own convention for the rotation-vector
+         * sensor — not North/East/Up.)
+         *
+         * This app's world frame (SkyCoordinates) is X = North,
+         * Y = East, Z = Up, so North/East are swapped here when
+         * pulling components out of each column.
          */
 
-        val rightX = adjustedMatrix[0].toDouble()
-        val rightY = adjustedMatrix[3].toDouble()
+        val rightX = adjustedMatrix[3].toDouble()
+        val rightY = adjustedMatrix[0].toDouble()
         val rightZ = adjustedMatrix[6].toDouble()
 
-        val upX = adjustedMatrix[1].toDouble()
-        val upY = adjustedMatrix[4].toDouble()
+        val upX = adjustedMatrix[4].toDouble()
+        val upY = adjustedMatrix[1].toDouble()
         val upZ = adjustedMatrix[7].toDouble()
 
-        val backX = -adjustedMatrix[2].toDouble()
-        val backY = -adjustedMatrix[5].toDouble()
+        val backX = -adjustedMatrix[5].toDouble()
+        val backY = -adjustedMatrix[2].toDouble()
         val backZ = -adjustedMatrix[8].toDouble()
 
         /*
@@ -180,10 +184,6 @@ class MainActivity : FlutterActivity(), SensorEventListener {
          * X = North
          * Y = East
          * Z = Up
-         *
-         * Android rotation matrix is expressed in
-         * the Earth's coordinate frame for the
-         * rotation-vector sensor.
          */
 
         val azimuth = Math.toDegrees(
