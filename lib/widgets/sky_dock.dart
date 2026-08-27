@@ -1,5 +1,6 @@
 import 'dart:ui';
 
+import 'package:equatable/equatable.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
@@ -138,7 +139,7 @@ class _DockToggle extends StatelessWidget {
   }
 }
 
-class _DockState {
+class _DockState extends Equatable {
   final bool showHorizon;
   final bool showConstellations;
   final bool objectSelectionEnabled;
@@ -148,4 +149,8 @@ class _DockState {
     required this.showConstellations,
     required this.objectSelectionEnabled,
   });
+
+  @override
+  List<Object?> get props =>
+      [showHorizon, showConstellations, objectSelectionEnabled];
 }

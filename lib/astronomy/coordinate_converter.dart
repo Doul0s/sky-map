@@ -10,28 +10,73 @@ class CoordinateConverter {
     required double longitude,
     required DateTime utc,
   }) {
+    return equatorialToHorizontal(
+      ra: star.ra,
+      dec: star.dec,
+      latitude: latitude,
+      longitude: longitude,
+      utc: utc,
+    );
+  }
+
+  /// Converts equatorial coordinates (RA/Dec) to horizontal
+  /// coordinates (Azimuth/Altitude) for an observer.
+  ///
+  /// RA:
+  ///   degrees, 0 <= RA < 360
+  ///
+  /// Dec:
+  ///   degrees, -90 <= Dec <= 90
+  ///
+  /// Latitude:
+  ///   observer latitude in degrees
+  ///
+  /// Longitude:
+  ///   observer longitude in degrees
+  ///
+  /// Azimuth convention:
+  ///   0   = North
+  ///   90  = East
+  ///   180 = South
+  ///   270 = West
+  static CelestialPosition equatorialToHorizontal({
+    required double ra,
+    required double dec,
+    required double latitude,
+    required double longitude,
+    required DateTime utc,
+  }) {
     final lst = _localSiderealTime(
       longitude: longitude,
       utc: utc,
     );
 
-    var hourAngle = lst - star.ra;
+    var hourAngle = lst - ra;
 
     while (hourAngle < 0) {
-      hourAngle += 360;
+      hourAngle += 360.0;
     }
 
-    while (hourAngle >= 360) {
-      hourAngle -= 360;
+    while (hourAngle >= 360.0) {
+      hourAngle -= 360.0;
     }
 
     final h = _radians(hourAngle);
-    final dec = _radians(star.dec);
+    final declination = _radians(dec);
     final lat = _radians(latitude);
 
+    /*
+     * Altitude:
+     *
+     * sin(h_alt) =
+     *   sin(dec) sin(lat)
+     *   +
+     *   cos(dec) cos(lat) cos(H)
+     */
     final sinAltitude =
-        math.sin(dec) * math.sin(lat) +
-        math.cos(dec) *
+        math.sin(declination) *
+            math.sin(lat) +
+        math.cos(declination) *
             math.cos(lat) *
             math.cos(h);
 
@@ -50,19 +95,22 @@ class CoordinateConverter {
     final y = math.sin(h);
 
     final x =
-        math.cos(h) * math.sin(lat) -
-        math.tan(dec) * math.cos(lat);
+        math.cos(h) *
+            math.sin(lat) -
+        math.tan(declination) *
+            math.cos(lat);
 
     var azimuth = math.atan2(y, x);
 
     azimuth += math.pi;
 
-    var azimuthDegrees = _degrees(azimuth);
+    var azimuthDegrees =
+        _degrees(azimuth);
 
-    azimuthDegrees %= 360;
+    azimuthDegrees %= 360.0;
 
     if (azimuthDegrees < 0) {
-      azimuthDegrees += 360;
+      azimuthDegrees += 360.0;
     }
 
     return CelestialPosition(
@@ -83,18 +131,18 @@ class CoordinateConverter {
         280.46061837 +
         360.98564736629 * d;
 
-    gmst %= 360;
+    gmst %= 360.0;
 
     if (gmst < 0) {
-      gmst += 360;
+      gmst += 360.0;
     }
 
     var lst = gmst + longitude;
 
-    lst %= 360;
+    lst %= 360.0;
 
     if (lst < 0) {
-      lst += 360;
+      lst += 360.0;
     }
 
     return lst;
@@ -107,10 +155,14 @@ class CoordinateConverter {
   }
 
   static double _radians(double degrees) {
-    return degrees * math.pi / 180.0;
+    return degrees *
+        math.pi /
+        180.0;
   }
 
   static double _degrees(double radians) {
-    return radians * 180.0 / math.pi;
+    return radians *
+        180.0 /
+        math.pi;
   }
 }

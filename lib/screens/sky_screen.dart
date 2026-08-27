@@ -1,30 +1,41 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../astronomy/sun_calculator.dart';
 import '../blocs/sky/sky_bloc.dart';
 import '../blocs/sky/sky_event.dart';
 import '../blocs/sky/sky_state.dart';
 import '../services/constellation_service.dart';
 import '../services/location_service.dart';
 import '../services/orientation_service.dart';
+import '../services/star_catalog_service.dart';
 import '../widgets/sky_dock.dart';
 import '../widgets/sky_painter.dart';
 import '../widgets/star_hit_tester.dart';
-import '../widgets/star_info_panel.dart';
-import '../services/star_catalog_service.dart';
+import '../widgets/celestial_info_panel.dart';
 
 class SkyScreen extends StatelessWidget {
-  const SkyScreen({super.key});
+  const SkyScreen({
+    super.key,
+  });
 
   @override
   Widget build(BuildContext context) {
     return BlocProvider(
       create: (_) => SkyBloc(
-        locationService: LocationService(),
-        orientationService: OrientationService(),
-        starCatalogService: StarCatalogService(),
-        constellationService: ConstellationService(),
-      )..add(const SkyLoadRequested()),
+        locationService:
+            LocationService(),
+        orientationService:
+            OrientationService(),
+        starCatalogService:
+            StarCatalogService(),
+        constellationService:
+            ConstellationService(),
+        sunCalculator:
+            const SunCalculator(),
+      )..add(
+          const SkyLoadRequested(),
+        ),
       child: const _SkyView(),
     );
   }
@@ -46,11 +57,13 @@ class _SkyView extends StatelessWidget {
             return _ErrorView(
               message:
                   state.errorMessage ??
-                      'Something went wrong.',
+                  'Something went wrong.',
             );
 
           case SkyStatus.loaded:
-            return _LoadedView(state: state);
+            return _LoadedView(
+              state: state,
+            );
         }
       },
     );
@@ -107,7 +120,8 @@ class _LoadedView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final orientation = state.orientation;
+    final orientation =
+        state.orientation;
 
     if (orientation == null) {
       return const Scaffold(
@@ -130,26 +144,40 @@ class _LoadedView extends StatelessWidget {
           fit: StackFit.expand,
           children: [
             LayoutBuilder(
-              builder: (context, constraints) {
+              builder:
+                  (context, constraints) {
                 final size = Size(
                   constraints.maxWidth,
                   constraints.maxHeight,
                 );
 
                 return GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTapUp: (details) => _handleTap(
-                    context,
-                    details.localPosition,
-                    size,
-                  ),
+                  behavior:
+                      HitTestBehavior.opaque,
+                  onTapUp: (details) {
+                    _handleTap(
+                      context,
+                      details.localPosition,
+                      size,
+                    );
+                  },
                   child: CustomPaint(
                     painter: SkyPainter(
                       stars: state.stars,
-                      starVectors: state.starVectors,
+                      starVectors:
+                          state.starVectors,
                       constellations:
                           state.constellations,
-                      orientation: orientation,
+
+                      sunVector:
+                          state.sunVector,
+                      sunTrajectory:
+                          state.sunTrajectory,
+                      sunSelected:
+                          state.sunSelected,
+
+                      orientation:
+                          orientation,
                       showHorizon:
                           state.showHorizon,
                       showConstellations:
@@ -164,17 +192,25 @@ class _LoadedView extends StatelessWidget {
               },
             ),
 
-            if (state.selectedStar != null)
+            if (state.selectedInfo != null)
               Positioned(
                 top: 12,
                 left: 0,
                 right: 0,
                 child: Center(
-                  child: StarInfoPanel(
-                    star: state.selectedStar!,
-                    onClose: () => context
-                        .read<SkyBloc>()
-                        .add(const SkyStarTapped(null)),
+                  child: CelestialInfoPanel(
+                    object: state.selectedInfo!,
+                    onClose: () {
+                      if (state.sunSelected) {
+                        context
+                            .read<SkyBloc>()
+                            .add(const SkySunTapped());
+                      } else {
+                        context
+                            .read<SkyBloc>()
+                            .add(const SkyStarTapped(null));
+                      }
+                    },
                   ),
                 ),
               ),
@@ -199,7 +235,8 @@ class _LoadedView extends StatelessWidget {
     Size size,
   ) {
     if (!state.objectSelectionEnabled &&
-        state.selectedStarId == null) {
+        state.selectedStarId == null &&
+        !state.sunSelected) {
       return;
     }
 
@@ -208,17 +245,45 @@ class _LoadedView extends StatelessWidget {
       size.height / 2,
     );
 
-    final tappedId = state.objectSelectionEnabled
-        ? StarHitTester.findTappedStar(
-            tapPosition: localPosition,
-            stars: state.stars,
-            starVectors: state.starVectors,
-            orientation: state.orientation!,
-            center: center,
-            size: size,
-          )
-        : null;
+    if (state.objectSelectionEnabled &&
+        state.sunVector != null &&
+        StarHitTester.findTappedSun(
+          tapPosition: localPosition,
+          sunVector: state.sunVector!,
+          orientation: state.orientation!,
+          center: center,
+          size: size,
+        )) {
+      context
+          .read<SkyBloc>()
+          .add(
+            const SkySunTapped(),
+          );
+      return;
+    }
 
-    context.read<SkyBloc>().add(SkyStarTapped(tappedId));
+    final tappedId =
+        state.objectSelectionEnabled
+            ? StarHitTester
+                .findTappedStar(
+                tapPosition:
+                    localPosition,
+                stars: state.stars,
+                starVectors:
+                    state.starVectors,
+                orientation:
+                    state.orientation!,
+                center: center,
+                size: size,
+              )
+            : null;
+
+    context
+        .read<SkyBloc>()
+        .add(
+          SkyStarTapped(
+            tappedId,
+          ),
+        );
   }
 }

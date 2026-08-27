@@ -3,22 +3,20 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 
 import '../app/theme/app_colors.dart';
-import '../models/sky_star.dart';
+import '../models/celestial_object.dart';
 
-class StarInfoPanel extends StatelessWidget {
-  final SkyStar star;
+class CelestialInfoPanel extends StatelessWidget {
+  final CelestialObject object;
   final VoidCallback onClose;
 
-  const StarInfoPanel({
+  const CelestialInfoPanel({
     super.key,
-    required this.star,
+    required this.object,
     required this.onClose,
   });
 
   @override
   Widget build(BuildContext context) {
-    // Absorbs taps so interacting with the panel doesn't fall through
-    // to the "tap anywhere else to close" handler behind it.
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: () {},
@@ -46,7 +44,7 @@ class StarInfoPanel extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _Header(star: star, onClose: onClose),
+                    _Header(object: object, onClose: onClose),
                     const SizedBox(height: 10),
                     Flexible(
                       child: Scrollbar(
@@ -55,7 +53,10 @@ class StarInfoPanel extends StatelessWidget {
                           padding: const EdgeInsets.only(right: 8),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
-                            children: _buildRows(star),
+                            children: [
+                              for (final fact in object.facts)
+                                _InfoRow(label: fact.key, value: fact.value),
+                            ],
                           ),
                         ),
                       ),
@@ -69,41 +70,28 @@ class StarInfoPanel extends StatelessWidget {
       ),
     );
   }
-
-  static List<Widget> _buildRows(SkyStar star) {
-    final entries = <MapEntry<String, String>>[
-      if (star.constellation != null)
-        MapEntry('Constellation', star.constellation!),
-      MapEntry('Magnitude', star.magnitude.toStringAsFixed(2)),
-      if (star.spectralType != null && star.spectralType!.isNotEmpty)
-        MapEntry('Spectral type', star.spectralType!),
-      if (star.bayer != null) MapEntry('Bayer designation', star.bayer!),
-      MapEntry('Right ascension', '${star.ra.toStringAsFixed(2)}°'),
-      MapEntry('Declination', '${star.dec.toStringAsFixed(2)}°'),
-      if (star.origin != null && star.origin!.isNotEmpty)
-        MapEntry('Origin', star.origin!),
-      if (star.language != null && star.language!.isNotEmpty)
-        MapEntry('Language', star.language!),
-    ];
-
-    return [
-      for (final entry in entries)
-        _InfoRow(label: entry.key, value: entry.value),
-    ];
-  }
 }
 
 class _Header extends StatelessWidget {
-  final SkyStar star;
+  final CelestialObject object;
   final VoidCallback onClose;
 
-  const _Header({required this.star, required this.onClose});
+  const _Header({required this.object, required this.onClose});
+
+  // The Sun keeps its warm title color; everything else defaults to
+  // white. Adding Moon/planet colors later is one more case here.
+  Color get _titleColor {
+    switch (object.type) {
+      case CelestialObjectType.sun:
+        return const Color(0xFFFFD95A);
+      default:
+        return Colors.white;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    final catalogName = star.name;
-    final showCatalogName =
-        catalogName != null && catalogName != star.displayName;
+    final showSubtitle = object.description.isNotEmpty;
 
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -113,18 +101,18 @@ class _Header extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                star.displayName,
-                style: const TextStyle(
-                  color: Colors.white,
+                object.name,
+                style: TextStyle(
+                  color: _titleColor,
                   fontSize: 18,
                   fontWeight: FontWeight.w600,
                 ),
               ),
-              if (showCatalogName)
+              if (showSubtitle)
                 Padding(
                   padding: const EdgeInsets.only(top: 2),
                   child: Text(
-                    catalogName,
+                    object.description,
                     style: TextStyle(
                       color: AppColors.textTertiary,
                       fontSize: 13,

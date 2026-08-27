@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../app/theme/app_colors.dart';
 import '../astronomy/sky_coordinates.dart';
-import '../blocs/sky/sky_state.dart';
+import '../models/celestial_trajectory.dart';
 import '../models/constellation.dart';
 import '../models/device_orientation.dart';
 import '../models/sky_star.dart';
@@ -14,6 +14,20 @@ class SkyPainter extends CustomPainter {
   final List<SkyStar> stars;
   final List<WorldVector> starVectors;
   final List<Constellation> constellations;
+
+  /// World-space unit vector of the current Sun position.
+  final WorldVector? sunVector;
+
+  /// Apparent path of the Sun across the observer's sky.
+  ///
+  /// This is a sky trajectory, not the physical orbit.
+  final CelestialTrajectory? sunTrajectory;
+
+  /// Whether the Sun is currently selected.
+  ///
+  /// The trajectory is only drawn when this is true.
+  final bool sunSelected;
+
   final bool showHorizon;
   final bool showConstellations;
   final bool objectSelectionEnabled;
@@ -24,6 +38,9 @@ class SkyPainter extends CustomPainter {
     required this.stars,
     required this.starVectors,
     required this.constellations,
+    this.sunVector,
+    this.sunTrajectory,
+    this.sunSelected = false,
     this.showHorizon = true,
     this.showConstellations = true,
     this.objectSelectionEnabled = false,
@@ -31,24 +48,62 @@ class SkyPainter extends CustomPainter {
   });
 
   @override
-  void paint(Canvas canvas, Size size) {
-    _drawBackground(canvas, size);
+  void paint(
+    Canvas canvas,
+    Size size,
+  ) {
+    _drawBackground(
+      canvas,
+      size,
+    );
 
     final center = Offset(
       size.width / 2,
       size.height / 2,
     );
 
-    // Built once per frame and shared between star dots and
-    // constellation lines, instead of recomputing world vectors
-    // separately for each.
-    final starWorldVectors = _starWorldVectorsById();
+    /*
+     * Built once per frame and shared between
+     * star dots and constellation lines.
+     */
+    final starWorldVectors =
+        _starWorldVectorsById();
 
-    final starPositions = _projectStars(
+    final starPositions =
+        _projectStars(
       starWorldVectors,
       center,
       size,
     );
+
+    /*
+     * Draw the Sun trajectory before the Sun itself.
+     *
+     * This makes the Sun sit visually on top of
+     * its highlighted path.
+     */
+    if (sunSelected &&
+        sunTrajectory != null) {
+      _drawSunTrajectory(
+        canvas,
+        sunTrajectory!,
+        center,
+        size,
+      );
+    }
+
+    /*
+     * Draw the Sun before the stars so the star field
+     * remains visually rich around it.
+     */
+    if (sunVector != null) {
+      _drawSun(
+        canvas,
+        sunVector!,
+        center,
+        size,
+      );
+    }
 
     _drawStars(
       canvas,
@@ -64,12 +119,16 @@ class SkyPainter extends CustomPainter {
       );
     }
 
-    // The selected star's constellation is always shown, brighter than
-    // the normal lines, even if "Stars" (constellations) is toggled off.
+    /*
+     * The selected star's constellation is always
+     * shown brighter, even if normal constellation
+     * rendering is disabled.
+     */
     final highlightedConstellation =
         _selectedConstellation();
 
-    if (highlightedConstellation != null) {
+    if (highlightedConstellation !=
+        null) {
       _drawHighlightedConstellation(
         canvas,
         starWorldVectors,
@@ -92,18 +151,19 @@ class SkyPainter extends CustomPainter {
       );
     }
 
-    // Keep the aiming point above everything else.
+    /*
+     * Keep the aiming point above everything else.
+     */
     _drawCenterMarker(
       canvas,
       size,
     );
   }
 
-  // World vectors are already computed by SkyBloc whenever `positions`
-  // changes (every 30s). This just indexes them by star id — no trig,
-  // no per-frame astronomy.
-  Map<int, List<double>> _starWorldVectorsById() {
-    final result = <int, List<double>>{};
+  Map<int, List<double>>
+      _starWorldVectorsById() {
+    final result =
+        <int, List<double>>{};
 
     final count = math.min(
       stars.length,
@@ -111,24 +171,24 @@ class SkyPainter extends CustomPainter {
     );
 
     for (var i = 0; i < count; i++) {
-      result[stars[i].id] = starVectors[i];
+      result[stars[i].id] =
+          starVectors[i];
     }
 
     return result;
   }
 
-  // Converts the prepared world vectors into screen coordinates.
-  //
-  // Astronomy has already been done by SkyBloc. The painter only deals
-  // with the camera and the canvas.
   Map<int, Offset> _projectStars(
-    Map<int, List<double>> starWorldVectors,
+    Map<int, List<double>>
+        starWorldVectors,
     Offset center,
     Size size,
   ) {
-    final result = <int, Offset>{};
+    final result =
+        <int, Offset>{};
 
-    for (final entry in starWorldVectors.entries) {
+    for (final entry
+        in starWorldVectors.entries) {
       final point = _projectStar(
         entry.value,
         center,
@@ -148,26 +208,28 @@ class SkyPainter extends CustomPainter {
     Offset center,
     Size size,
   ) {
-    final camera = _cameraCoordinates(world);
+    final camera =
+        _cameraCoordinates(world);
 
-    // Stars behind the phone cannot be seen.
     if (camera.depth <= 0) {
       return null;
     }
 
-    final focalLength = size.height * 0.5;
+    final focalLength =
+        size.height * 0.5;
 
-    final x = center.dx +
+    final x =
+        center.dx +
         focalLength *
             camera.x /
             camera.depth;
 
-    final y = center.dy -
+    final y =
+        center.dy -
         focalLength *
             camera.y /
             camera.depth;
 
-    // Keep a small amount of padding so stars do not pop at the edge.
     if (x < -4 ||
         x > size.width + 4 ||
         y < -4 ||
@@ -178,13 +240,245 @@ class SkyPainter extends CustomPainter {
     return Offset(x, y);
   }
 
-  // Draw constellation segments independently.
-  //
-  // This is important because a constellation should not disappear just
-  // because one of its stars has moved outside the screen.
+  void _drawSunTrajectory(
+    Canvas canvas,
+    CelestialTrajectory trajectory,
+    Offset center,
+    Size size,
+  ) {
+    if (trajectory.points.length < 2) {
+      return;
+    }
+
+    /*
+     * Soft outer glow.
+     *
+     * The trajectory is intentionally subtle. The goal is
+     * to make it feel like an illuminated path rather than
+     * a hard geometric line.
+     */
+    final glowPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 6.0
+      ..strokeCap = StrokeCap.round
+      ..color = const Color(
+        0xFFFFB300,
+      ).withValues(
+        alpha: 0.08,
+      );
+
+    /*
+     * Main trajectory line.
+     */
+    final trajectoryPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.4
+      ..strokeCap = StrokeCap.round
+      ..color = const Color(
+        0xFFFFD95A,
+      ).withValues(
+        alpha: 0.70,
+      );
+
+    /*
+     * Small points sampled along the trajectory.
+     *
+     * These reinforce the "path through the sky" idea.
+     */
+    final pointPaint = Paint()
+      ..style = PaintingStyle.fill
+      ..color = const Color(
+        0xFFFFD95A,
+      ).withValues(
+        alpha: 0.55,
+      );
+
+    for (var i = 0;
+        i < trajectory.points.length - 1;
+        i++) {
+      final first =
+          trajectory.points[i];
+
+      final second =
+          trajectory.points[i + 1];
+
+      /*
+       * Use the same camera-plane clipping used
+       * by constellation lines.
+       *
+       * This is critical because the trajectory is a
+       * 3D sky curve. A simple drawLine() between projected
+       * points would create incorrect lines when part of
+       * the trajectory crosses behind the observer.
+       */
+      final segment =
+          _projectConstellationSegment(
+        first,
+        second,
+        center,
+        size,
+      );
+
+      if (segment == null) {
+        continue;
+      }
+
+      canvas.drawLine(
+        segment.$1,
+        segment.$2,
+        glowPaint,
+      );
+
+      canvas.drawLine(
+        segment.$1,
+        segment.$2,
+        trajectoryPaint,
+      );
+    }
+
+    /*
+     * Draw the trajectory sample points.
+     */
+    for (final world
+        in trajectory.points) {
+      final point = _projectStar(
+        world,
+        center,
+        size,
+      );
+
+      if (point == null) {
+        continue;
+      }
+
+      canvas.drawCircle(
+        point,
+        1.4,
+        pointPaint,
+      );
+    }
+  }
+
+  void _drawSun(
+    Canvas canvas,
+    WorldVector world,
+    Offset center,
+    Size size,
+  ) {
+    final camera =
+        _cameraCoordinates(world);
+
+    /*
+     * The Sun is behind the phone when its
+     * depth is <= 0.
+     */
+    if (camera.depth <= 0) {
+      return;
+    }
+
+    final point = _projectStar(
+      world,
+      center,
+      size,
+    );
+
+    if (point == null) {
+      return;
+    }
+
+    /*
+     * When selected, increase the Sun's visual presence.
+     *
+     * The visual size is deliberately much larger than
+     * the real angular size of the Sun. This is a UI marker,
+     * not a physical disk.
+     */
+    final glowRadius =
+        sunSelected ? 34.0 : 26.0;
+
+    final glowPaint = Paint()
+      ..style = PaintingStyle.fill
+      ..color = const Color(
+        0xFFFFC857,
+      ).withValues(
+        alpha: sunSelected
+            ? 0.16
+            : 0.10,
+      );
+
+    canvas.drawCircle(
+      point,
+      glowRadius,
+      glowPaint,
+    );
+
+    final outerGlowPaint = Paint()
+      ..style = PaintingStyle.fill
+      ..color = const Color(
+        0xFFFFB300,
+      ).withValues(
+        alpha: sunSelected
+            ? 0.12
+            : 0.08,
+      );
+
+    canvas.drawCircle(
+      point,
+      sunSelected
+          ? 23
+          : 18,
+      outerGlowPaint,
+    );
+
+    /*
+     * Selected Sun gets a subtle ring.
+     */
+    if (sunSelected) {
+      final selectionPaint = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.4
+        ..color = const Color(
+          0xFFFFE082,
+        ).withValues(
+          alpha: 0.85,
+        );
+
+      canvas.drawCircle(
+        point,
+        12,
+        selectionPaint,
+      );
+    }
+
+    final sunPaint = Paint()
+      ..style = PaintingStyle.fill
+      ..color = const Color(
+        0xFFFFD95A,
+      );
+
+    canvas.drawCircle(
+      point,
+      7,
+      sunPaint,
+    );
+
+    final corePaint = Paint()
+      ..style = PaintingStyle.fill
+      ..color = const Color(
+        0xFFFFF3B0,
+      );
+
+    canvas.drawCircle(
+      point,
+      4,
+      corePaint,
+    );
+  }
+
   void _drawConstellations(
     Canvas canvas,
-    Map<int, List<double>> starWorldPositions,
+    Map<int, List<double>>
+        starWorldPositions,
     Size size,
     Offset center,
   ) {
@@ -193,17 +487,21 @@ class SkyPainter extends CustomPainter {
     }
 
     final paint = Paint()
-      ..color = AppColors.accent.withValues(alpha: 0.45)
+      ..color = AppColors.accent
+          .withValues(alpha: 0.45)
       ..strokeWidth = 1.0
       ..style = PaintingStyle.stroke;
 
-    for (final constellation in constellations) {
-      for (final line in constellation.lines) {
+    for (final constellation
+        in constellations) {
+      for (final line
+          in constellation.lines) {
         _drawConstellationLine(
           canvas: canvas,
           paint: paint,
           line: line,
-          starWorldPositions: starWorldPositions,
+          starWorldPositions:
+              starWorldPositions,
           center: center,
           size: size,
         );
@@ -225,14 +523,17 @@ class SkyPainter extends CustomPainter {
       }
     }
 
-    final constellationId = selectedStar?.constellation;
+    final constellationId =
+        selectedStar?.constellation;
 
     if (constellationId == null) {
       return null;
     }
 
-    for (final constellation in constellations) {
-      if (constellation.id == constellationId) {
+    for (final constellation
+        in constellations) {
+      if (constellation.id ==
+          constellationId) {
         return constellation;
       }
     }
@@ -242,22 +543,26 @@ class SkyPainter extends CustomPainter {
 
   void _drawHighlightedConstellation(
     Canvas canvas,
-    Map<int, List<double>> starWorldPositions,
+    Map<int, List<double>>
+        starWorldPositions,
     Size size,
     Offset center,
     Constellation constellation,
   ) {
     final paint = Paint()
-      ..color = AppColors.accentBright
+      ..color =
+          AppColors.accentBright
       ..strokeWidth = 1.6
       ..style = PaintingStyle.stroke;
 
-    for (final line in constellation.lines) {
+    for (final line
+        in constellation.lines) {
       _drawConstellationLine(
         canvas: canvas,
         paint: paint,
         line: line,
-        starWorldPositions: starWorldPositions,
+        starWorldPositions:
+            starWorldPositions,
         center: center,
         size: size,
       );
@@ -268,7 +573,8 @@ class SkyPainter extends CustomPainter {
     required Canvas canvas,
     required Paint paint,
     required List<int> line,
-    required Map<int, List<double>> starWorldPositions,
+    required Map<int, List<double>>
+        starWorldPositions,
     required Offset center,
     required Size size,
   }) {
@@ -276,15 +582,23 @@ class SkyPainter extends CustomPainter {
       return;
     }
 
-    for (var i = 0; i < line.length - 1; i++) {
-      final first = starWorldPositions[line[i]];
-      final second = starWorldPositions[line[i + 1]];
+    for (var i = 0;
+        i < line.length - 1;
+        i++) {
+      final first =
+          starWorldPositions[line[i]];
 
-      if (first == null || second == null) {
+      final second =
+          starWorldPositions[
+              line[i + 1]];
+
+      if (first == null ||
+          second == null) {
         continue;
       }
 
-      final segment = _projectConstellationSegment(
+      final segment =
+          _projectConstellationSegment(
         first,
         second,
         center,
@@ -303,11 +617,8 @@ class SkyPainter extends CustomPainter {
     }
   }
 
-  // Allows constellation endpoints to move outside the screen naturally.
-  //
-  // If a segment crosses behind the camera, it is clipped at the camera
-  // plane so perspective does not produce a huge line across the sky.
-  (Offset, Offset)? _projectConstellationSegment(
+  (Offset, Offset)?
+      _projectConstellationSegment(
     List<double> first,
     List<double> second,
     Offset center,
@@ -325,7 +636,8 @@ class SkyPainter extends CustomPainter {
     final secondFront =
         secondCamera.depth > 0;
 
-    if (!firstFront && !secondFront) {
+    if (!firstFront &&
+        !secondFront) {
       return null;
     }
 
@@ -352,13 +664,15 @@ class SkyPainter extends CustomPainter {
       }
     }
 
-    final firstPoint = _projectCameraPoint(
+    final firstPoint =
+        _projectCameraPoint(
       a,
       center,
       size,
     );
 
-    final secondPoint = _projectCameraPoint(
+    final secondPoint =
+        _projectCameraPoint(
       b,
       center,
       size,
@@ -377,14 +691,16 @@ class SkyPainter extends CustomPainter {
     const minimumDepth = 0.001;
 
     final depthDifference =
-        second.depth - first.depth;
+        second.depth -
+        first.depth;
 
     if (depthDifference == 0) {
       return null;
     }
 
     final t =
-        (minimumDepth - first.depth) /
+        (minimumDepth -
+                first.depth) /
             depthDifference;
 
     if (t < 0 || t > 1) {
@@ -428,19 +744,28 @@ class SkyPainter extends CustomPainter {
     final worldZ = world[2];
 
     final x =
-        worldX * orientation.rightX +
-            worldY * orientation.rightY +
-            worldZ * orientation.rightZ;
+        worldX *
+                orientation.rightX +
+            worldY *
+                orientation.rightY +
+            worldZ *
+                orientation.rightZ;
 
     final y =
-        worldX * orientation.upX +
-            worldY * orientation.upY +
-            worldZ * orientation.upZ;
+        worldX *
+                orientation.upX +
+            worldY *
+                orientation.upY +
+            worldZ *
+                orientation.upZ;
 
     final depth =
-        worldX * orientation.backX +
-            worldY * orientation.backY +
-            worldZ * orientation.backZ;
+        worldX *
+                orientation.backX +
+            worldY *
+                orientation.backY +
+            worldZ *
+                orientation.backZ;
 
     return _CameraPoint(
       x: x,
@@ -461,29 +786,44 @@ class SkyPainter extends CustomPainter {
       ..strokeWidth = 1.2;
 
     for (final star in stars) {
-      final position = positions[star.id];
+      final position =
+          positions[star.id];
 
       if (position == null) {
         continue;
       }
 
-      final radius = _starRadius(star.magnitude);
+      final radius =
+          _starRadius(
+        star.magnitude,
+      );
 
-      if (objectSelectionEnabled && star.isInteractable) {
-        final isSelected = star.id == selectedStarId;
+      if (objectSelectionEnabled &&
+          star.isInteractable) {
+        final isSelected =
+            star.id == selectedStarId;
 
-        highlightPaint.color = isSelected
-            ? AppColors.accentBright
-            : AppColors.accent.withValues(alpha: 0.55);
+        highlightPaint.color =
+            isSelected
+                ? AppColors
+                    .accentBright
+                : AppColors.accent
+                    .withValues(
+                    alpha: 0.55,
+                  );
 
         canvas.drawCircle(
           position,
-          radius + (isSelected ? 7 : 5),
+          radius +
+              (isSelected
+                  ? 7
+                  : 5),
           highlightPaint,
         );
       }
 
-      paint.color = _starColor(
+      paint.color =
+          _starColor(
         star.spectralType,
       );
 
@@ -495,10 +835,12 @@ class SkyPainter extends CustomPainter {
     }
   }
 
-  double _starRadius(double magnitude) {
-    // Brighter stars get a little more visual weight.
+  double _starRadius(
+    double magnitude,
+  ) {
     final radius =
-        2.8 - magnitude * 0.32;
+        2.8 -
+        magnitude * 0.32;
 
     return radius.clamp(
       0.7,
@@ -514,38 +856,61 @@ class SkyPainter extends CustomPainter {
       return Colors.white;
     }
 
-    switch (spectralType[0].toUpperCase()) {
+    switch (
+        spectralType[0]
+            .toUpperCase()) {
       case 'O':
-        return const Color(0xFF9BB0FF);
+        return const Color(
+          0xFF9BB0FF,
+        );
 
       case 'B':
-        return const Color(0xFFAABFFF);
+        return const Color(
+          0xFFAABFFF,
+        );
 
       case 'A':
-        return const Color(0xFFCAD8FF);
+        return const Color(
+          0xFFCAD8FF,
+        );
 
       case 'F':
-        return const Color(0xFFF8F7FF);
+        return const Color(
+          0xFFF8F7FF,
+        );
 
       case 'G':
-        return const Color(0xFFFFF4EA);
+        return const Color(
+          0xFFFFF4EA,
+        );
 
       case 'K':
-        return const Color(0xFFFFD2A1);
+        return const Color(
+          0xFFFFD2A1,
+        );
 
       case 'M':
-        return const Color(0xFFFFCC6F);
+        return const Color(
+          0xFFFFCC6F,
+        );
 
       default:
         return Colors.white;
     }
   }
 
-  // Draws the horizon as a series of independently clipped segments
-  // (reusing the same camera-plane clipping as constellation lines)
-  // instead of one continuous Path. This avoids a stray line being
-  // drawn across the screen when part of the ring dips behind the
-  // camera.
+  static final List<List<double>>
+      _horizonWorldVectors = [
+    for (var azimuth = 0.0;
+        azimuth <= 360.0;
+        azimuth += 1.0)
+      SkyCoordinates
+          .horizontalToVector(
+        azimuth: azimuth,
+        altitude: 0,
+      ),
+  ];
+
   void _drawHorizon(
     Canvas canvas,
     Size size,
@@ -556,45 +921,36 @@ class SkyPainter extends CustomPainter {
     );
 
     final paint = Paint()
-      ..color = AppColors.accent.withValues(alpha: 0.55)
+      ..color = AppColors.accent
+          .withValues(alpha: 0.55)
       ..strokeWidth = 1.2
       ..style = PaintingStyle.stroke;
 
-    List<double>? previous;
-
-    for (var azimuth = 0.0;
-        azimuth <= 360.0;
-        azimuth += 1.0) {
-      final world =
-          SkyCoordinates.horizontalToVector(
-        azimuth: azimuth,
-        altitude: 0,
+    for (var i = 0;
+        i <
+            _horizonWorldVectors
+                    .length -
+                1;
+        i++) {
+      final segment =
+          _projectConstellationSegment(
+        _horizonWorldVectors[i],
+        _horizonWorldVectors[
+            i + 1],
+        center,
+        size,
       );
 
-      if (previous != null) {
-        final segment = _projectConstellationSegment(
-          previous,
-          world,
-          center,
-          size,
+      if (segment != null) {
+        canvas.drawLine(
+          segment.$1,
+          segment.$2,
+          paint,
         );
-
-        if (segment != null) {
-          canvas.drawLine(
-            segment.$1,
-            segment.$2,
-            paint,
-          );
-        }
       }
-
-      previous = world;
     }
   }
 
-  // Cardinal letters, positioned right on the horizon ring at their
-  // azimuth (N=0, E=90, S=180, W=270), reusing the same star
-  // projection so they track device orientation like everything else.
   static const _compassLabels = [
     (0.0, 'N'),
     (90.0, 'E'),
@@ -607,19 +963,32 @@ class SkyPainter extends CustomPainter {
     Offset center,
     Size size,
   ) {
-    for (final (azimuth, label) in _compassLabels) {
-      final world = SkyCoordinates.horizontalToVector(
+    for (final (
+      azimuth,
+      label
+    ) in _compassLabels) {
+      final world =
+          SkyCoordinates
+              .horizontalToVector(
         azimuth: azimuth,
         altitude: 0,
       );
 
-      final point = _projectStar(world, center, size);
+      final point = _projectStar(
+        world,
+        center,
+        size,
+      );
 
       if (point == null) {
         continue;
       }
 
-      _drawCompassLabel(canvas, label, point);
+      _drawCompassLabel(
+        canvas,
+        label,
+        point,
+      );
     }
   }
 
@@ -628,19 +997,26 @@ class SkyPainter extends CustomPainter {
     String label,
     Offset position,
   ) {
-    final textPainter = TextPainter(
+    final textPainter =
+        TextPainter(
       text: TextSpan(
         text: label,
         style: TextStyle(
-          color: AppColors.accentBright,
+          color:
+              AppColors.accentBright,
           fontSize: 13,
-          fontWeight: FontWeight.w700,
+          fontWeight:
+              FontWeight.w700,
           shadows: const [
-            Shadow(color: Colors.black, blurRadius: 4),
+            Shadow(
+              color: Colors.black,
+              blurRadius: 4,
+            ),
           ],
         ),
       ),
-      textDirection: TextDirection.ltr,
+      textDirection:
+          TextDirection.ltr,
     )..layout();
 
     textPainter.paint(
@@ -653,8 +1029,6 @@ class SkyPainter extends CustomPainter {
     );
   }
 
-  // Leaves a small gap at the center so the exact point being aimed at
-  // isn't covered by the reticle itself.
   void _drawCenterMarker(
     Canvas canvas,
     Size size,
@@ -665,31 +1039,58 @@ class SkyPainter extends CustomPainter {
     );
 
     final paint = Paint()
-      ..color = AppColors.accent.withValues(alpha: 0.65)
+      ..color = AppColors.accent
+          .withValues(alpha: 0.65)
       ..strokeWidth = 1.0;
 
     const gap = 3.0;
     const length = 8.0;
 
     canvas.drawLine(
-      Offset(center.dx - length, center.dy),
-      Offset(center.dx - gap, center.dy),
-      paint,
-    );
-    canvas.drawLine(
-      Offset(center.dx + gap, center.dy),
-      Offset(center.dx + length, center.dy),
+      Offset(
+        center.dx - length,
+        center.dy,
+      ),
+      Offset(
+        center.dx - gap,
+        center.dy,
+      ),
       paint,
     );
 
     canvas.drawLine(
-      Offset(center.dx, center.dy - length),
-      Offset(center.dx, center.dy - gap),
+      Offset(
+        center.dx + gap,
+        center.dy,
+      ),
+      Offset(
+        center.dx + length,
+        center.dy,
+      ),
       paint,
     );
+
     canvas.drawLine(
-      Offset(center.dx, center.dy + gap),
-      Offset(center.dx, center.dy + length),
+      Offset(
+        center.dx,
+        center.dy - length,
+      ),
+      Offset(
+        center.dx,
+        center.dy - gap,
+      ),
+      paint,
+    );
+
+    canvas.drawLine(
+      Offset(
+        center.dx,
+        center.dy + gap,
+      ),
+      Offset(
+        center.dx,
+        center.dy + length,
+      ),
       paint,
     );
   }
@@ -714,16 +1115,24 @@ class SkyPainter extends CustomPainter {
     return oldDelegate.orientation !=
             orientation ||
         oldDelegate.stars != stars ||
-        oldDelegate.starVectors != starVectors ||
+        oldDelegate.starVectors !=
+            starVectors ||
         oldDelegate.constellations !=
             constellations ||
+        oldDelegate.sunVector !=
+            sunVector ||
+        oldDelegate.sunTrajectory !=
+            sunTrajectory ||
+        oldDelegate.sunSelected !=
+            sunSelected ||
         oldDelegate.showHorizon !=
             showHorizon ||
         oldDelegate.showConstellations !=
             showConstellations ||
         oldDelegate.objectSelectionEnabled !=
             objectSelectionEnabled ||
-        oldDelegate.selectedStarId != selectedStarId;
+        oldDelegate.selectedStarId !=
+            selectedStarId;
   }
 }
 

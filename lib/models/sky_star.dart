@@ -1,3 +1,5 @@
+import 'celestial_object.dart';
+
 class SkyStar {
   final int id;
   final String? name;
@@ -78,5 +80,32 @@ class SkyStar {
     final name = commonName?.trim();
 
     return name != null && name.isNotEmpty;
+  }
+
+  CelestialObject toCelestialObject() {
+    final catalogName = name?.trim();
+    final subtitle =
+        catalogName != null && catalogName.isNotEmpty && catalogName != displayName
+            ? catalogName
+            : '';
+
+    return CelestialObject(
+      id: 'star-$id',
+      name: displayName,
+      type: CelestialObjectType.star,
+      description: subtitle,
+      facts: [
+        if (constellation != null) MapEntry('Constellation', constellation!),
+        MapEntry('Magnitude', magnitude.toStringAsFixed(2)),
+        if (spectralType != null && spectralType!.isNotEmpty)
+          MapEntry('Spectral type', spectralType!),
+        if (bayer != null) MapEntry('Bayer designation', bayer!),
+        MapEntry('Right ascension', '${ra.toStringAsFixed(2)}°'),
+        MapEntry('Declination', '${dec.toStringAsFixed(2)}°'),
+        if (origin != null && origin!.isNotEmpty) MapEntry('Origin', origin!),
+        if (language != null && language!.isNotEmpty)
+          MapEntry('Language', language!),
+      ],
+    );
   }
 }

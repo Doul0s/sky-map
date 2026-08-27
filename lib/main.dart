@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import 'screens/sky_screen.dart';
+import 'app/app.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -10,11 +10,5 @@ Future<void> main() async {
     SystemUiMode.immersiveSticky,
   );
 
-  runApp(
-    const MaterialApp(
-      debugShowCheckedModeBanner: false,
-      themeMode: ThemeMode.dark,
-      home: SkyScreen(),
-    ),
-  );
+  runApp(const SkyMapApp());
 }
