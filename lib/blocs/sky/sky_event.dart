@@ -10,17 +10,14 @@ sealed class SkyEvent extends Equatable {
   List<Object?> get props => [];
 }
 
-/// Requests the initial loading of the sky.
 final class SkyLoadRequested extends SkyEvent {
   const SkyLoadRequested();
 }
 
-/// Requests a recalculation of celestial positions.
 final class SkyPositionsUpdateRequested extends SkyEvent {
   const SkyPositionsUpdateRequested();
 }
 
-/// Device orientation changed.
 final class SkyOrientationChanged extends SkyEvent {
   final DeviceOrientation orientation;
 
@@ -34,17 +31,14 @@ final class SkyOrientationChanged extends SkyEvent {
       ];
 }
 
-/// Toggles the horizon line.
 final class SkyHorizonToggled extends SkyEvent {
   const SkyHorizonToggled();
 }
 
-/// Toggles constellation rendering.
 final class SkyConstellationsToggled extends SkyEvent {
   const SkyConstellationsToggled();
 }
 
-/// Toggles object selection.
 final class SkyObjectSelectionToggled extends SkyEvent {
   const SkyObjectSelectionToggled();
 }
@@ -65,15 +59,22 @@ final class SkyStarTapped extends SkyEvent {
       ];
 }
 
-/// The Sun was tapped.
+/// A celestial object was tapped, identified by its [CelestialBody.id].
 ///
-/// The Sun is kept separate from the star catalogue because
-/// it is a dynamically calculated celestial object.
-final class SkySunTapped extends SkyEvent {
-  const SkySunTapped();
+/// Passing `null` clears the current celestial-object selection.
+final class SkyCelestialObjectTapped extends SkyEvent {
+  final String? objectId;
+
+  const SkyCelestialObjectTapped(
+    this.objectId,
+  );
+
+  @override
+  List<Object?> get props => [
+        objectId,
+      ];
 }
 
-/// Updates the observer location.
 final class SkyLocationChanged extends SkyEvent {
   final ObserverLocation location;
 

@@ -243,7 +243,6 @@ class MainActivity : FlutterActivity(), SensorEventListener {
         sensor: Sensor?,
         accuracy: Int
     ) {
-        // Nothing required.
     }
 
     override fun onPause() {

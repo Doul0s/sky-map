@@ -84,14 +84,6 @@ class CoordinateConverter {
       sinAltitude.clamp(-1.0, 1.0),
     );
 
-    /*
-     * Azimuth:
-     *
-     * 0   = North
-     * 90  = East
-     * 180 = South
-     * 270 = West
-     */
     final y = math.sin(h);
 
     final x =

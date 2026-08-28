@@ -4,8 +4,10 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../astronomy/coordinate_converter.dart';
 import '../../astronomy/sky_coordinates.dart';
-import '../../astronomy/sun_calculator.dart';
+import '../../data/celestial_bodies.dart';
+import '../../models/celestial_body.dart';
 import '../../models/celestial_position.dart';
+import '../../models/celestial_runtime.dart';
 import '../../models/celestial_trajectory.dart';
 import '../../models/observer_location.dart';
 import '../../services/constellation_service.dart';
@@ -20,7 +22,10 @@ class SkyBloc extends Bloc<SkyEvent, SkyState> {
   final OrientationService orientationService;
   final StarCatalogService starCatalogService;
   final ConstellationService constellationService;
-  final SunCalculator sunCalculator;
+
+  /// The celestial bodies this bloc computes positions/trajectories for.
+  /// Defaults to the app-wide registry; overridable for tests.
+  final List<CelestialBody> celestialBodies;
 
   StreamSubscription? _orientationSubscription;
   Timer? _positionTimer;
@@ -30,8 +35,9 @@ class SkyBloc extends Bloc<SkyEvent, SkyState> {
     required this.orientationService,
     required this.starCatalogService,
     required this.constellationService,
-    required this.sunCalculator,
-  }) : super(const SkyState()) {
+    List<CelestialBody>? celestialBodies,
+  })  : celestialBodies = celestialBodies ?? registeredCelestialBodies,
+        super(const SkyState()) {
     on<SkyLoadRequested>(
       _onLoadRequested,
     );
@@ -60,8 +66,8 @@ class SkyBloc extends Bloc<SkyEvent, SkyState> {
       _onStarTapped,
     );
 
-    on<SkySunTapped>(
-      _onSunTapped,
+    on<SkyCelestialObjectTapped>(
+      _onCelestialObjectTapped,
     );
 
     on<SkyLocationChanged>(
@@ -85,48 +91,22 @@ class SkyBloc extends Bloc<SkyEvent, SkyState> {
           await starCatalogService.loadStars();
 
       final constellations =
-          await constellationService
-              .loadConstellations();
+          await constellationService.loadConstellations();
 
       final location =
-          await locationService
-              .getCurrentLocation();
+          await locationService.getCurrentLocation();
 
-      final utc =
-          DateTime.now().toUtc();
+      final utc = DateTime.now().toUtc();
 
-      final positions =
-          _calculatePositions(
+      final positions = _calculatePositions(
         stars: stars,
         location: location,
         utc: utc,
       );
 
-      final (sunRa, sunDec) =
-          sunCalculator.calculate(utc);
-
-      final sunPosition =
-          _sunHorizontalPosition(
-        ra: sunRa,
-        dec: sunDec,
+      final celestialRuntimes = _calculateCelestialRuntimes(
         location: location,
         utc: utc,
-      );
-
-      final starVectors =
-          _calculateWorldVectors(
-        positions,
-      );
-
-      final sunVector =
-          _calculateWorldVector(
-        sunPosition,
-      );
-
-      final sunTrajectory =
-          _calculateSunTrajectory(
-        location: location,
-        center: utc,
       );
 
       emit(
@@ -136,12 +116,8 @@ class SkyBloc extends Bloc<SkyEvent, SkyState> {
           constellations: constellations,
           location: location,
           positions: positions,
-          sunPosition: sunPosition,
-          sunRa: sunRa,
-          sunDec: sunDec,
-          starVectors: starVectors,
-          sunVector: sunVector,
-          sunTrajectory: sunTrajectory,
+          starVectors: _calculateWorldVectors(positions),
+          celestialRuntimes: celestialRuntimes,
           lastPositionUpdate: utc,
         ),
       );
@@ -164,54 +140,28 @@ class SkyBloc extends Bloc<SkyEvent, SkyState> {
   ) async {
     final location = state.location;
 
-    if (state.status != SkyStatus.loaded ||
-        location == null) {
+    if (state.status != SkyStatus.loaded || location == null) {
       return;
     }
 
-    final utc =
-        DateTime.now().toUtc();
+    final utc = DateTime.now().toUtc();
 
-    final positions =
-        _calculatePositions(
+    final positions = _calculatePositions(
       stars: state.stars,
       location: location,
       utc: utc,
     );
 
-    final (sunRa, sunDec) =
-        sunCalculator.calculate(utc);
-
-    final sunPosition =
-        _sunHorizontalPosition(
-      ra: sunRa,
-      dec: sunDec,
+    final celestialRuntimes = _calculateCelestialRuntimes(
       location: location,
       utc: utc,
-    );
-
-    final sunTrajectory =
-        _calculateSunTrajectory(
-      location: location,
-      center: utc,
     );
 
     emit(
       state.copyWith(
         positions: positions,
-        sunPosition: sunPosition,
-        sunRa: sunRa,
-        sunDec: sunDec,
-        starVectors:
-            _calculateWorldVectors(
-          positions,
-        ),
-        sunVector:
-            _calculateWorldVector(
-          sunPosition,
-        ),
-        sunTrajectory:
-            sunTrajectory,
+        starVectors: _calculateWorldVectors(positions),
+        celestialRuntimes: celestialRuntimes,
         lastPositionUpdate: utc,
       ),
     );
@@ -234,8 +184,7 @@ class SkyBloc extends Bloc<SkyEvent, SkyState> {
   ) {
     emit(
       state.copyWith(
-        showHorizon:
-            !state.showHorizon,
+        showHorizon: !state.showHorizon,
       ),
     );
   }
@@ -246,8 +195,7 @@ class SkyBloc extends Bloc<SkyEvent, SkyState> {
   ) {
     emit(
       state.copyWith(
-        showConstellations:
-            !state.showConstellations,
+        showConstellations: !state.showConstellations,
       ),
     );
   }
@@ -258,9 +206,9 @@ class SkyBloc extends Bloc<SkyEvent, SkyState> {
   ) {
     emit(
       state.copyWith(
-        objectSelectionEnabled:
-            !state.objectSelectionEnabled,
-        clearSelection: true,
+        objectSelectionEnabled: !state.objectSelectionEnabled,
+        clearStarSelection: true,
+        clearCelestialSelection: true,
       ),
     );
   }
@@ -270,42 +218,29 @@ class SkyBloc extends Bloc<SkyEvent, SkyState> {
     Emitter<SkyState> emit,
   ) {
     final isSameStar =
-        event.starId != null &&
-        event.starId ==
-            state.selectedStarId;
+        event.starId != null && event.starId == state.selectedStarId;
 
     emit(
       state.copyWith(
-        selectedStarId:
-            isSameStar
-                ? null
-                : event.starId,
-
-        // Selecting a star deselects the Sun.
-        sunSelected: false,
-
-        clearSelection:
-            event.starId == null ||
-            isSameStar,
+        selectedStarId: isSameStar ? null : event.starId,
+        clearStarSelection: event.starId == null || isSameStar,
+        clearCelestialSelection: true,
       ),
     );
   }
 
-  void _onSunTapped(
-    SkySunTapped event,
+  void _onCelestialObjectTapped(
+    SkyCelestialObjectTapped event,
     Emitter<SkyState> emit,
   ) {
+    final isSameObject = event.objectId != null &&
+        event.objectId == state.selectedCelestialObjectId;
+
     emit(
       state.copyWith(
-        sunSelected:
-            !state.sunSelected,
-
-        // `selectedStarId: null` alone would NOT clear it — copyWith's
-        // `selectedStarId ?? this.selectedStarId` can't tell "explicitly
-        // clear" apart from "not provided", so the old star selection
-        // would silently survive. `clearSelection` is the only path
-        // that actually clears it (see copyWith below).
-        clearSelection: true,
+        selectedCelestialObjectId: isSameObject ? null : event.objectId,
+        clearCelestialSelection: event.objectId == null || isSameObject,
+        clearStarSelection: true,
       ),
     );
   }
@@ -320,17 +255,12 @@ class SkyBloc extends Bloc<SkyEvent, SkyState> {
       ),
     );
 
-    /*
-     * The position timer will recalculate the astronomical
-     * positions using the new observer location.
-     */
     add(
       const SkyPositionsUpdateRequested(),
     );
   }
 
-  List<CelestialPosition>
-      _calculatePositions({
+  List<CelestialPosition> _calculatePositions({
     required List stars,
     required ObserverLocation location,
     required DateTime utc,
@@ -338,84 +268,91 @@ class SkyBloc extends Bloc<SkyEvent, SkyState> {
     return stars
         .map<CelestialPosition>(
           (star) {
-            return CoordinateConverter
-                .starToHorizontal(
+            return CoordinateConverter.starToHorizontal(
               star: star,
-              latitude:
-                  location.latitude,
-              longitude:
-                  location.longitude,
+              latitude: location.latitude,
+              longitude: location.longitude,
               utc: utc,
             );
           },
         )
-        .toList(
-          growable: false,
-        );
+        .toList(growable: false);
   }
 
-  CelestialPosition
-      _sunHorizontalPosition({
-    required double ra,
-    required double dec,
+  /// Computes position/vector/trajectory for every registered celestial
+  /// body, keyed by [CelestialBody.id].
+  Map<String, CelestialRuntime> _calculateCelestialRuntimes({
     required ObserverLocation location,
     required DateTime utc,
   }) {
-    return CoordinateConverter
-        .equatorialToHorizontal(
-      ra: ra,
-      dec: dec,
-      latitude:
-          location.latitude,
-      longitude:
-          location.longitude,
-      utc: utc,
-    );
+    final result = <String, CelestialRuntime>{};
+
+    for (final body in celestialBodies) {
+      final (ra, dec) = body.calculator.calculate(utc);
+
+      final position = CoordinateConverter.equatorialToHorizontal(
+        ra: ra,
+        dec: dec,
+        latitude: location.latitude,
+        longitude: location.longitude,
+        utc: utc,
+      );
+
+      final vector = SkyCoordinates.horizontalToVector(
+        azimuth: position.azimuth,
+        altitude: position.altitude,
+      );
+
+      final trajectory = _calculateTrajectory(
+        body: body,
+        location: location,
+        center: utc,
+      );
+
+      result[body.id] = CelestialRuntime(
+        ra: ra,
+        dec: dec,
+        position: position,
+        vector: vector,
+        trajectory: trajectory,
+      );
+    }
+
+    return result;
   }
 
-  CelestialTrajectory
-      _calculateSunTrajectory({
+  CelestialTrajectory _calculateTrajectory({
+    required CelestialBody body,
     required ObserverLocation location,
     required DateTime center,
   }) {
-    final samples =
-        sunCalculator.generateTrajectory(
+    final samples = body.calculator.generateTrajectory(
       center: center,
       hoursBefore: 12,
       hoursAfter: 12,
       stepMinutes: 30,
     );
 
-    final points =
-        <WorldVector>[];
+    final points = <WorldVector>[];
 
     for (final sample in samples) {
-      final position =
-          CoordinateConverter
-              .equatorialToHorizontal(
+      final position = CoordinateConverter.equatorialToHorizontal(
         ra: sample.ra,
         dec: sample.dec,
-        latitude:
-            location.latitude,
-        longitude:
-            location.longitude,
+        latitude: location.latitude,
+        longitude: location.longitude,
         utc: sample.time,
       );
 
-      final vector =
-          SkyCoordinates.horizontalToVector(
-        azimuth:
-            position.azimuth,
-        altitude:
-            position.altitude,
+      points.add(
+        SkyCoordinates.horizontalToVector(
+          azimuth: position.azimuth,
+          altitude: position.altitude,
+        ),
       );
-
-      points.add(vector);
     }
 
-    return CelestialTrajectory(
-      points: points,
-    );
+    return CelestialTrajectory(points: points);
   }
 
   /*
@@ -431,54 +368,30 @@ class SkyBloc extends Bloc<SkyEvent, SkyState> {
    * SkyPainter because it does not depend on the device
    * orientation.
    */
-  List<WorldVector>
-      _calculateWorldVectors(
+  List<WorldVector> _calculateWorldVectors(
     List<CelestialPosition> positions,
   ) {
     return positions
         .map(
           (position) {
-            return SkyCoordinates
-                .horizontalToVector(
-              azimuth:
-                  position.azimuth,
-              altitude:
-                  position.altitude,
+            return SkyCoordinates.horizontalToVector(
+              azimuth: position.azimuth,
+              altitude: position.altitude,
             );
           },
         )
-        .toList(
-          growable: false,
-        );
-  }
-
-  WorldVector _calculateWorldVector(
-    CelestialPosition position,
-  ) {
-    return SkyCoordinates
-        .horizontalToVector(
-      azimuth:
-          position.azimuth,
-      altitude:
-          position.altitude,
-    );
+        .toList(growable: false);
   }
 
   void _startOrientation() {
-    _orientationSubscription
-        ?.cancel();
+    _orientationSubscription?.cancel();
 
     orientationService.start();
 
-    _orientationSubscription =
-        orientationService
-            .orientationStream
-            .listen(
+    _orientationSubscription = orientationService.orientationStream.listen(
       (orientation) {
         add(
-          SkyOrientationChanged(
-            orientation,
-          ),
+          SkyOrientationChanged(orientation),
         );
       },
     );
@@ -487,11 +400,8 @@ class SkyBloc extends Bloc<SkyEvent, SkyState> {
   void _startPositionTimer() {
     _positionTimer?.cancel();
 
-    _positionTimer =
-        Timer.periodic(
-      const Duration(
-        seconds: 30,
-      ),
+    _positionTimer = Timer.periodic(
+      const Duration(seconds: 30),
       (_) {
         add(
           const SkyPositionsUpdateRequested(),
@@ -504,8 +414,7 @@ class SkyBloc extends Bloc<SkyEvent, SkyState> {
   Future<void> close() async {
     _positionTimer?.cancel();
 
-    await _orientationSubscription
-        ?.cancel();
+    await _orientationSubscription?.cancel();
 
     await orientationService.dispose();
 

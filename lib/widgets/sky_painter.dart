@@ -4,10 +4,14 @@ import 'package:flutter/material.dart';
 
 import '../app/theme/app_colors.dart';
 import '../astronomy/sky_coordinates.dart';
+import '../models/celestial_body.dart';
+import '../models/celestial_object.dart';
+import '../models/celestial_runtime.dart';
 import '../models/celestial_trajectory.dart';
 import '../models/constellation.dart';
 import '../models/device_orientation.dart';
 import '../models/sky_star.dart';
+import 'camera_projector.dart';
 
 class SkyPainter extends CustomPainter {
   final DeviceOrientation orientation;
@@ -15,18 +19,14 @@ class SkyPainter extends CustomPainter {
   final List<WorldVector> starVectors;
   final List<Constellation> constellations;
 
-  /// World-space unit vector of the current Sun position.
-  final WorldVector? sunVector;
+  /// Celestial bodies to draw and their live
+  /// positions/trajectories, keyed by CelestialBody.id.
+  final List<CelestialBody> celestialBodies;
+  final Map<String, CelestialRuntime> celestialRuntimes;
 
-  /// Apparent path of the Sun across the observer's sky.
-  ///
-  /// This is a sky trajectory, not the physical orbit.
-  final CelestialTrajectory? sunTrajectory;
-
-  /// Whether the Sun is currently selected.
-  ///
-  /// The trajectory is only drawn when this is true.
-  final bool sunSelected;
+  /// Which celestial body is selected, if any. Its trajectory is drawn;
+  /// others are not.
+  final String? selectedCelestialObjectId;
 
   final bool showHorizon;
   final bool showConstellations;
@@ -38,9 +38,9 @@ class SkyPainter extends CustomPainter {
     required this.stars,
     required this.starVectors,
     required this.constellations,
-    this.sunVector,
-    this.sunTrajectory,
-    this.sunSelected = false,
+    this.celestialBodies = const [],
+    this.celestialRuntimes = const {},
+    this.selectedCelestialObjectId,
     this.showHorizon = true,
     this.showConstellations = true,
     this.objectSelectionEnabled = false,
@@ -62,10 +62,6 @@ class SkyPainter extends CustomPainter {
       size.height / 2,
     );
 
-    /*
-     * Built once per frame and shared between
-     * star dots and constellation lines.
-     */
     final starWorldVectors =
         _starWorldVectorsById();
 
@@ -76,34 +72,24 @@ class SkyPainter extends CustomPainter {
       size,
     );
 
-    /*
-     * Draw the Sun trajectory before the Sun itself.
-     *
-     * This makes the Sun sit visually on top of
-     * its highlighted path.
-     */
-    if (sunSelected &&
-        sunTrajectory != null) {
-      _drawSunTrajectory(
+    final selectedRuntime = selectedCelestialObjectId != null
+        ? celestialRuntimes[selectedCelestialObjectId]
+        : null;
+
+    if (selectedRuntime != null && selectedRuntime.trajectory.isNotEmpty) {
+      _drawTrajectory(
         canvas,
-        sunTrajectory!,
+        selectedRuntime.trajectory,
         center,
         size,
       );
     }
 
-    /*
-     * Draw the Sun before the stars so the star field
-     * remains visually rich around it.
-     */
-    if (sunVector != null) {
-      _drawSun(
-        canvas,
-        sunVector!,
-        center,
-        size,
-      );
-    }
+    _drawCelestialObjects(
+      canvas,
+      center,
+      size,
+    );
 
     _drawStars(
       canvas,
@@ -119,11 +105,8 @@ class SkyPainter extends CustomPainter {
       );
     }
 
-    /*
-     * The selected star's constellation is always
-     * shown brighter, even if normal constellation
-     * rendering is disabled.
-     */
+    // The selected star's constellation is always shown brighter,
+    // even when normal constellation rendering is disabled.
     final highlightedConstellation =
         _selectedConstellation();
 
@@ -151,9 +134,6 @@ class SkyPainter extends CustomPainter {
       );
     }
 
-    /*
-     * Keep the aiming point above everything else.
-     */
     _drawCenterMarker(
       canvas,
       size,
@@ -208,39 +188,34 @@ class SkyPainter extends CustomPainter {
     Offset center,
     Size size,
   ) {
-    final camera =
-        _cameraCoordinates(world);
-
-    if (camera.depth <= 0) {
-      return null;
-    }
-
     final focalLength =
         size.height * 0.5;
 
-    final x =
-        center.dx +
-        focalLength *
-            camera.x /
-            camera.depth;
+    final point = CameraProjector.project(
+      world,
+      orientation,
+      center,
+      focalLength,
+    );
 
-    final y =
-        center.dy -
-        focalLength *
-            camera.y /
-            camera.depth;
-
-    if (x < -4 ||
-        x > size.width + 4 ||
-        y < -4 ||
-        y > size.height + 4) {
+    if (point == null) {
       return null;
     }
 
-    return Offset(x, y);
+    if (point.dx < -4 ||
+        point.dx > size.width + 4 ||
+        point.dy < -4 ||
+        point.dy > size.height + 4) {
+      return null;
+    }
+
+    return point;
   }
 
-  void _drawSunTrajectory(
+  /// Draws the selected celestial object's apparent sky trajectory —
+  /// the sequence of sky directions it passes through over the sampled
+  /// time window.
+  void _drawTrajectory(
     Canvas canvas,
     CelestialTrajectory trajectory,
     Offset center,
@@ -250,13 +225,6 @@ class SkyPainter extends CustomPainter {
       return;
     }
 
-    /*
-     * Soft outer glow.
-     *
-     * The trajectory is intentionally subtle. The goal is
-     * to make it feel like an illuminated path rather than
-     * a hard geometric line.
-     */
     final glowPaint = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = 6.0
@@ -267,9 +235,6 @@ class SkyPainter extends CustomPainter {
         alpha: 0.08,
       );
 
-    /*
-     * Main trajectory line.
-     */
     final trajectoryPaint = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.4
@@ -280,11 +245,6 @@ class SkyPainter extends CustomPainter {
         alpha: 0.70,
       );
 
-    /*
-     * Small points sampled along the trajectory.
-     *
-     * These reinforce the "path through the sky" idea.
-     */
     final pointPaint = Paint()
       ..style = PaintingStyle.fill
       ..color = const Color(
@@ -303,13 +263,10 @@ class SkyPainter extends CustomPainter {
           trajectory.points[i + 1];
 
       /*
-       * Use the same camera-plane clipping used
-       * by constellation lines.
-       *
-       * This is critical because the trajectory is a
-       * 3D sky curve. A simple drawLine() between projected
-       * points would create incorrect lines when part of
-       * the trajectory crosses behind the observer.
+       * Use the same camera-plane clipping as constellation lines:
+       * a plain drawLine() between projected points would draw
+       * incorrect lines where the trajectory crosses behind the
+       * observer.
        */
       final segment =
           _projectConstellationSegment(
@@ -336,9 +293,6 @@ class SkyPainter extends CustomPainter {
       );
     }
 
-    /*
-     * Draw the trajectory sample points.
-     */
     for (final world
         in trajectory.points) {
       final point = _projectStar(
@@ -359,23 +313,52 @@ class SkyPainter extends CustomPainter {
     }
   }
 
+  /// Draws every registered celestial body that has a computed runtime
+  /// position, dispatching to the appropriate visual by [body.type].
+  void _drawCelestialObjects(
+    Canvas canvas,
+    Offset center,
+    Size size,
+  ) {
+    for (final body in celestialBodies) {
+      final runtime = celestialRuntimes[body.id];
+
+      if (runtime == null) {
+        continue;
+      }
+
+      final isSelected = selectedCelestialObjectId == body.id;
+
+      switch (body.type) {
+        case CelestialObjectType.sun:
+          _drawSun(
+            canvas,
+            runtime.vector,
+            center,
+            size,
+            isSelected: isSelected,
+          );
+          break;
+
+        default:
+          _drawGenericCelestialMarker(
+            canvas,
+            runtime.vector,
+            center,
+            size,
+            isSelected: isSelected,
+          );
+      }
+    }
+  }
+
   void _drawSun(
     Canvas canvas,
     WorldVector world,
     Offset center,
-    Size size,
-  ) {
-    final camera =
-        _cameraCoordinates(world);
-
-    /*
-     * The Sun is behind the phone when its
-     * depth is <= 0.
-     */
-    if (camera.depth <= 0) {
-      return;
-    }
-
+    Size size, {
+    required bool isSelected,
+  }) {
     final point = _projectStar(
       world,
       center,
@@ -386,22 +369,17 @@ class SkyPainter extends CustomPainter {
       return;
     }
 
-    /*
-     * When selected, increase the Sun's visual presence.
-     *
-     * The visual size is deliberately much larger than
-     * the real angular size of the Sun. This is a UI marker,
-     * not a physical disk.
-     */
+    // The Sun is drawn much larger than its real angular size —
+    // this is a UI marker, not a physical disk.
     final glowRadius =
-        sunSelected ? 34.0 : 26.0;
+        isSelected ? 34.0 : 26.0;
 
     final glowPaint = Paint()
       ..style = PaintingStyle.fill
       ..color = const Color(
         0xFFFFC857,
       ).withValues(
-        alpha: sunSelected
+        alpha: isSelected
             ? 0.16
             : 0.10,
       );
@@ -417,23 +395,20 @@ class SkyPainter extends CustomPainter {
       ..color = const Color(
         0xFFFFB300,
       ).withValues(
-        alpha: sunSelected
+        alpha: isSelected
             ? 0.12
             : 0.08,
       );
 
     canvas.drawCircle(
       point,
-      sunSelected
+      isSelected
           ? 23
           : 18,
       outerGlowPaint,
     );
 
-    /*
-     * Selected Sun gets a subtle ring.
-     */
-    if (sunSelected) {
+    if (isSelected) {
       final selectionPaint = Paint()
         ..style = PaintingStyle.stroke
         ..strokeWidth = 1.4
@@ -472,6 +447,49 @@ class SkyPainter extends CustomPainter {
       point,
       4,
       corePaint,
+    );
+  }
+
+  /// Fallback visual for celestial body types without a dedicated
+  /// rendering case.
+  void _drawGenericCelestialMarker(
+    Canvas canvas,
+    WorldVector world,
+    Offset center,
+    Size size, {
+    required bool isSelected,
+  }) {
+    final point = _projectStar(
+      world,
+      center,
+      size,
+    );
+
+    if (point == null) {
+      return;
+    }
+
+    if (isSelected) {
+      final selectionPaint = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.4
+        ..color = AppColors.accentBright;
+
+      canvas.drawCircle(
+        point,
+        10,
+        selectionPaint,
+      );
+    }
+
+    final markerPaint = Paint()
+      ..style = PaintingStyle.fill
+      ..color = Colors.white;
+
+    canvas.drawCircle(
+      point,
+      4,
+      markerPaint,
     );
   }
 
@@ -625,10 +643,10 @@ class SkyPainter extends CustomPainter {
     Size size,
   ) {
     final firstCamera =
-        _cameraCoordinates(first);
+        CameraProjector.toCameraSpace(first, orientation);
 
     final secondCamera =
-        _cameraCoordinates(second);
+        CameraProjector.toCameraSpace(second, orientation);
 
     final firstFront =
         firstCamera.depth > 0;
@@ -664,18 +682,21 @@ class SkyPainter extends CustomPainter {
       }
     }
 
+    final focalLength =
+        size.height * 0.5;
+
     final firstPoint =
-        _projectCameraPoint(
+        CameraProjector.projectCameraPoint(
       a,
       center,
-      size,
+      focalLength,
     );
 
     final secondPoint =
-        _projectCameraPoint(
+        CameraProjector.projectCameraPoint(
       b,
       center,
-      size,
+      focalLength,
     );
 
     return (
@@ -684,9 +705,9 @@ class SkyPainter extends CustomPainter {
     );
   }
 
-  _CameraPoint? _clipAgainstCameraPlane(
-    _CameraPoint first,
-    _CameraPoint second,
+  CameraPoint? _clipAgainstCameraPlane(
+    CameraPoint first,
+    CameraPoint second,
   ) {
     const minimumDepth = 0.001;
 
@@ -707,70 +728,12 @@ class SkyPainter extends CustomPainter {
       return null;
     }
 
-    return _CameraPoint(
+    return CameraPoint(
       x: first.x +
           (second.x - first.x) * t,
       y: first.y +
           (second.y - first.y) * t,
       depth: minimumDepth,
-    );
-  }
-
-  Offset _projectCameraPoint(
-    _CameraPoint point,
-    Offset center,
-    Size size,
-  ) {
-    final focalLength =
-        size.height * 0.5;
-
-    return Offset(
-      center.dx +
-          focalLength *
-              point.x /
-              point.depth,
-      center.dy -
-          focalLength *
-              point.y /
-              point.depth,
-    );
-  }
-
-  _CameraPoint _cameraCoordinates(
-    List<double> world,
-  ) {
-    final worldX = world[0];
-    final worldY = world[1];
-    final worldZ = world[2];
-
-    final x =
-        worldX *
-                orientation.rightX +
-            worldY *
-                orientation.rightY +
-            worldZ *
-                orientation.rightZ;
-
-    final y =
-        worldX *
-                orientation.upX +
-            worldY *
-                orientation.upY +
-            worldZ *
-                orientation.upZ;
-
-    final depth =
-        worldX *
-                orientation.backX +
-            worldY *
-                orientation.backY +
-            worldZ *
-                orientation.backZ;
-
-    return _CameraPoint(
-      x: x,
-      y: y,
-      depth: depth,
     );
   }
 
@@ -1119,12 +1082,12 @@ class SkyPainter extends CustomPainter {
             starVectors ||
         oldDelegate.constellations !=
             constellations ||
-        oldDelegate.sunVector !=
-            sunVector ||
-        oldDelegate.sunTrajectory !=
-            sunTrajectory ||
-        oldDelegate.sunSelected !=
-            sunSelected ||
+        oldDelegate.celestialBodies !=
+            celestialBodies ||
+        oldDelegate.celestialRuntimes !=
+            celestialRuntimes ||
+        oldDelegate.selectedCelestialObjectId !=
+            selectedCelestialObjectId ||
         oldDelegate.showHorizon !=
             showHorizon ||
         oldDelegate.showConstellations !=
@@ -1134,16 +1097,4 @@ class SkyPainter extends CustomPainter {
         oldDelegate.selectedStarId !=
             selectedStarId;
   }
-}
-
-class _CameraPoint {
-  const _CameraPoint({
-    required this.x,
-    required this.y,
-    required this.depth,
-  });
-
-  final double x;
-  final double y;
-  final double depth;
 }

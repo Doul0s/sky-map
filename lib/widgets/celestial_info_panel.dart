@@ -78,8 +78,6 @@ class _Header extends StatelessWidget {
 
   const _Header({required this.object, required this.onClose});
 
-  // The Sun keeps its warm title color; everything else defaults to
-  // white. Adding Moon/planet colors later is one more case here.
   Color get _titleColor {
     switch (object.type) {
       case CelestialObjectType.sun:

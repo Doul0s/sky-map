@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
-import '../astronomy/sun_calculator.dart';
 import '../blocs/sky/sky_bloc.dart';
 import '../blocs/sky/sky_event.dart';
 import '../blocs/sky/sky_state.dart';
+import '../data/celestial_bodies.dart';
 import '../services/constellation_service.dart';
 import '../services/location_service.dart';
 import '../services/orientation_service.dart';
@@ -31,8 +31,6 @@ class SkyScreen extends StatelessWidget {
             StarCatalogService(),
         constellationService:
             ConstellationService(),
-        sunCalculator:
-            const SunCalculator(),
       )..add(
           const SkyLoadRequested(),
         ),
@@ -169,12 +167,12 @@ class _LoadedView extends StatelessWidget {
                       constellations:
                           state.constellations,
 
-                      sunVector:
-                          state.sunVector,
-                      sunTrajectory:
-                          state.sunTrajectory,
-                      sunSelected:
-                          state.sunSelected,
+                      celestialBodies:
+                          registeredCelestialBodies,
+                      celestialRuntimes:
+                          state.celestialRuntimes,
+                      selectedCelestialObjectId:
+                          state.selectedCelestialObjectId,
 
                       orientation:
                           orientation,
@@ -201,10 +199,12 @@ class _LoadedView extends StatelessWidget {
                   child: CelestialInfoPanel(
                     object: state.selectedInfo!,
                     onClose: () {
-                      if (state.sunSelected) {
-                        context
-                            .read<SkyBloc>()
-                            .add(const SkySunTapped());
+                      if (state.selectedCelestialObjectId != null) {
+                        context.read<SkyBloc>().add(
+                              SkyCelestialObjectTapped(
+                                state.selectedCelestialObjectId,
+                              ),
+                            );
                       } else {
                         context
                             .read<SkyBloc>()
@@ -236,7 +236,7 @@ class _LoadedView extends StatelessWidget {
   ) {
     if (!state.objectSelectionEnabled &&
         state.selectedStarId == null &&
-        !state.sunSelected) {
+        state.selectedCelestialObjectId == null) {
       return;
     }
 
@@ -245,45 +245,40 @@ class _LoadedView extends StatelessWidget {
       size.height / 2,
     );
 
-    if (state.objectSelectionEnabled &&
-        state.sunVector != null &&
-        StarHitTester.findTappedSun(
-          tapPosition: localPosition,
-          sunVector: state.sunVector!,
-          orientation: state.orientation!,
-          center: center,
-          size: size,
-        )) {
-      context
-          .read<SkyBloc>()
-          .add(
-            const SkySunTapped(),
-          );
+    final result = state.objectSelectionEnabled
+        ? StarHitTester.findTapped(
+            tapPosition: localPosition,
+            stars: state.stars,
+            starVectors: state.starVectors,
+            celestialVectors: {
+              for (final entry in state.celestialRuntimes.entries)
+                entry.key: entry.value.vector,
+            },
+            orientation: state.orientation!,
+            center: center,
+            size: size,
+          )
+        : null;
+
+    if (result is StarTapResult) {
+      context.read<SkyBloc>().add(SkyStarTapped(result.starId));
       return;
     }
 
-    final tappedId =
-        state.objectSelectionEnabled
-            ? StarHitTester
-                .findTappedStar(
-                tapPosition:
-                    localPosition,
-                stars: state.stars,
-                starVectors:
-                    state.starVectors,
-                orientation:
-                    state.orientation!,
-                center: center,
-                size: size,
-              )
-            : null;
+    if (result is CelestialObjectTapResult) {
+      context
+          .read<SkyBloc>()
+          .add(SkyCelestialObjectTapped(result.objectId));
+      return;
+    }
 
-    context
-        .read<SkyBloc>()
-        .add(
-          SkyStarTapped(
-            tappedId,
-          ),
-        );
+    // Nothing hit — either the tap genuinely missed, or selection mode
+    // is off and this tap is just meant to clear whatever is currently
+    // selected.
+    if (state.selectedCelestialObjectId != null) {
+      context.read<SkyBloc>().add(const SkyCelestialObjectTapped(null));
+    } else {
+      context.read<SkyBloc>().add(const SkyStarTapped(null));
+    }
   }
 }
