@@ -4,11 +4,11 @@ import '../../data/celestial_bodies.dart';
 import '../../models/celestial_object.dart';
 import '../../models/celestial_position.dart';
 import '../../models/celestial_runtime.dart';
+import '../../models/celestial_trajectory.dart';
 import '../../models/constellation.dart';
 import '../../models/device_orientation.dart';
 import '../../models/observer_location.dart';
 import '../../models/sky_star.dart';
-import '../../models/celestial_trajectory.dart';
 
 enum SkyStatus {
   initial,
@@ -52,15 +52,21 @@ class SkyState extends Equatable {
   final DateTime? lastPositionUpdate;
   final String? errorMessage;
 
+  // Display controls.
   final bool showHorizon;
   final bool showConstellations;
   final bool objectSelectionEnabled;
 
+  /// Which star is currently selected, if any.
   final int? selectedStarId;
 
-  /// Selected celestial body, by id (e.g. `"sun"`). Kept as a
-  /// separate field from [selectedStarId]: stars use integer catalog
-  /// ids, celestial bodies use string ids.
+  /// Which celestial body is currently selected, if any (by
+  /// [CelestialBody.id] — e.g. `"sun"`).
+  ///
+  /// Kept as a separate field from [selectedStarId] rather than a
+  /// shared id space: stars use integer catalog ids, celestial bodies
+  /// use string ids, and the two are mutually exclusive by construction
+  /// (the bloc clears one whenever the other is set).
   final String? selectedCelestialObjectId;
 
   const SkyState({
@@ -112,9 +118,10 @@ class SkyState extends Equatable {
   }
 
   /// Unified info-panel data for whatever is currently selected — a
-  /// celestial body or a catalog star. Null when nothing is selected.
-  /// [selectedCelestialObjectId] and [selectedStarId] are kept mutually
-  /// exclusive by the bloc, so at most one branch here is ever non-null.
+  /// celestial body (Sun today) or a catalog star. Null when nothing is
+  /// selected. [selectedCelestialObjectId] and [selectedStarId] are
+  /// kept mutually exclusive by the bloc, so at most one branch here is
+  /// ever non-null.
   CelestialObject? get selectedInfo {
     final objectId = selectedCelestialObjectId;
 
@@ -131,6 +138,8 @@ class SkyState extends Equatable {
         ra: runtime?.ra,
         dec: runtime?.dec,
         position: runtime?.position,
+        distanceKm: runtime?.distanceKm,
+        extraFacts: runtime?.extraFacts ?? const [],
       );
     }
 

@@ -23,8 +23,9 @@ class SkyBloc extends Bloc<SkyEvent, SkyState> {
   final StarCatalogService starCatalogService;
   final ConstellationService constellationService;
 
-  /// The celestial bodies this bloc computes positions/trajectories for.
-  /// Defaults to the app-wide registry; overridable for tests.
+  /// The celestial bodies (Sun today; Moon/Mars/Venus later) this bloc
+  /// computes positions/trajectories for. Defaults to the app-wide
+  /// registry; overridable for tests.
   final List<CelestialBody> celestialBodies;
 
   StreamSubscription? _orientationSubscription;
@@ -224,6 +225,8 @@ class SkyBloc extends Bloc<SkyEvent, SkyState> {
       state.copyWith(
         selectedStarId: isSameStar ? null : event.starId,
         clearStarSelection: event.starId == null || isSameStar,
+
+        // Selecting a star always deselects any celestial object.
         clearCelestialSelection: true,
       ),
     );
@@ -240,6 +243,8 @@ class SkyBloc extends Bloc<SkyEvent, SkyState> {
       state.copyWith(
         selectedCelestialObjectId: isSameObject ? null : event.objectId,
         clearCelestialSelection: event.objectId == null || isSameObject,
+
+        // Selecting a celestial object always deselects any star.
         clearStarSelection: true,
       ),
     );
@@ -255,6 +260,10 @@ class SkyBloc extends Bloc<SkyEvent, SkyState> {
       ),
     );
 
+    /*
+     * The position timer will recalculate the astronomical
+     * positions using the new observer location.
+     */
     add(
       const SkyPositionsUpdateRequested(),
     );
@@ -280,7 +289,10 @@ class SkyBloc extends Bloc<SkyEvent, SkyState> {
   }
 
   /// Computes position/vector/trajectory for every registered celestial
-  /// body, keyed by [CelestialBody.id].
+  /// body, keyed by [CelestialBody.id]. This is the generic
+  /// replacement for the old Sun-only calculation path — adding
+  /// Moon/Mars/Venus later means adding entries to [celestialBodies],
+  /// not touching this method.
   Map<String, CelestialRuntime> _calculateCelestialRuntimes({
     required ObserverLocation location,
     required DateTime utc,
@@ -288,7 +300,7 @@ class SkyBloc extends Bloc<SkyEvent, SkyState> {
     final result = <String, CelestialRuntime>{};
 
     for (final body in celestialBodies) {
-      final (ra, dec) = body.calculator.calculate(utc);
+      final (ra, dec, distanceKm) = body.calculator.calculate(utc);
 
       final position = CoordinateConverter.equatorialToHorizontal(
         ra: ra,
@@ -296,6 +308,8 @@ class SkyBloc extends Bloc<SkyEvent, SkyState> {
         latitude: location.latitude,
         longitude: location.longitude,
         utc: utc,
+        distanceKm: distanceKm,
+        altitudeMeters: location.altitude,
       );
 
       final vector = SkyCoordinates.horizontalToVector(
@@ -315,6 +329,8 @@ class SkyBloc extends Bloc<SkyEvent, SkyState> {
         position: position,
         vector: vector,
         trajectory: trajectory,
+        distanceKm: distanceKm,
+        extraFacts: body.extraFacts?.call(utc) ?? const [],
       );
     }
 
@@ -342,6 +358,8 @@ class SkyBloc extends Bloc<SkyEvent, SkyState> {
         latitude: location.latitude,
         longitude: location.longitude,
         utc: sample.time,
+        distanceKm: sample.distanceKm,
+        altitudeMeters: location.altitude,
       );
 
       points.add(

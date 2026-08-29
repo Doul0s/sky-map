@@ -4,8 +4,8 @@ import '../models/device_orientation.dart';
 import '../models/sky_star.dart';
 import 'camera_projector.dart';
 
-/// What was tapped: a catalog star or a celestial body. Returned by
-/// [StarHitTester.findTapped].
+/// What was tapped: a catalog star or a celestial body (Sun today;
+/// Moon/Mars/Venus later). Returned by [StarHitTester.findTapped].
 sealed class SkyTapResult {
   const SkyTapResult();
 }

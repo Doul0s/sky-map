@@ -4,15 +4,29 @@ import 'celestial_calculator.dart';
 
 /// Calculates the apparent geocentric position of the Sun.
 ///
-/// The trajectory it produces is NOT the physical orbit of the Earth
-/// around the Sun — it is the apparent path of the Sun across the
+/// The calculator provides:
+///
+/// - Right ascension
+/// - Declination
+/// - Apparent sky trajectory
+///
+/// The trajectory is NOT the physical orbit of the Earth around
+/// the Sun. It is the apparent path of the Sun across the
 /// observer's celestial sphere.
 class SunCalculator implements CelestialCalculator {
   const SunCalculator();
 
-  /// Calculates the Sun's equatorial coordinates (RA, Dec) in degrees.
+  /// Calculates the Sun's equatorial coordinates.
+  ///
+  /// Returns:
+  ///
+  ///   (right ascension, declination, distance)
+  ///
+  /// RA/Dec are in degrees. Distance is always null — the Sun is far
+  /// enough that geocentric and topocentric position are indistinguishable
+  /// at this app's precision, so no parallax correction is needed.
   @override
-  (double ra, double dec) calculate(DateTime utc) {
+  (double ra, double dec, double? distanceKm) calculate(DateTime utc) {
     final jd = _julianDate(utc);
 
     final t =
@@ -148,15 +162,32 @@ class SunCalculator implements CelestialCalculator {
     return (
       _degrees(ra),
       _degrees(dec),
+      null,
     );
   }
 
-  /// Generates the Sun's apparent trajectory as a sequence of sampled
-  /// equatorial positions around [center]. [hoursBefore]/[hoursAfter]
-  /// set how far into the past/future the trajectory extends and
-  /// [stepMinutes] is the sampling interval.
+  /// Generates the Sun's apparent trajectory.
   ///
-  /// The returned points are still equatorial coordinates; they are
+  /// [center] is the instant around which the trajectory is generated.
+  ///
+  /// [hoursBefore] determines how far into the past the trajectory goes.
+  ///
+  /// [hoursAfter] determines how far into the future the trajectory goes.
+  ///
+  /// [stepMinutes] determines the sampling interval.
+  ///
+  /// Example:
+  ///
+  ///   generateTrajectory(
+  ///     center: DateTime.now().toUtc(),
+  ///     hoursBefore: 12,
+  ///     hoursAfter: 12,
+  ///     stepMinutes: 30,
+  ///   );
+  ///
+  /// produces a 24-hour apparent solar path with a point every 30 minutes.
+  ///
+  /// The returned points are still equatorial coordinates. They are
   /// converted to horizontal/world coordinates later because the
   /// observer's location belongs to the coordinate-conversion layer.
   @override
@@ -204,7 +235,7 @@ class SunCalculator implements CelestialCalculator {
     var current = start;
 
     while (!current.isAfter(end)) {
-      final (ra, dec) =
+      final (ra, dec, distanceKm) =
           calculate(current);
 
       points.add(
@@ -212,6 +243,7 @@ class SunCalculator implements CelestialCalculator {
           time: current,
           ra: ra,
           dec: dec,
+          distanceKm: distanceKm,
         ),
       );
 
@@ -229,7 +261,7 @@ class SunCalculator implements CelestialCalculator {
      */
     if (points.isEmpty ||
         points.last.time != end) {
-      final (ra, dec) =
+      final (ra, dec, distanceKm) =
           calculate(end);
 
       points.add(
@@ -237,6 +269,7 @@ class SunCalculator implements CelestialCalculator {
           time: end,
           ra: ra,
           dec: dec,
+          distanceKm: distanceKm,
         ),
       );
     }

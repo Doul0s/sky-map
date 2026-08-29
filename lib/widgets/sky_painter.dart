@@ -19,8 +19,8 @@ class SkyPainter extends CustomPainter {
   final List<WorldVector> starVectors;
   final List<Constellation> constellations;
 
-  /// Celestial bodies to draw and their live
-  /// positions/trajectories, keyed by CelestialBody.id.
+  /// Celestial bodies to draw (Sun today; Moon/Mars/Venus later) and
+  /// their live positions/trajectories, keyed by CelestialBody.id.
   final List<CelestialBody> celestialBodies;
   final Map<String, CelestialRuntime> celestialRuntimes;
 
@@ -32,6 +32,15 @@ class SkyPainter extends CustomPainter {
   final bool showConstellations;
   final bool objectSelectionEnabled;
   final int? selectedStarId;
+
+  // Static colour map for trajectory hues, keyed by celestial body id.
+  static const Map<String, Color> _trajectoryColors = {
+    'sun': Color(0xFFFFB300),   // warm gold
+    'moon': Color(0xFFB0C4DE),  // cool silver‑blue
+    // Add planets later, e.g.:
+    // 'mars': Color(0xFFE27B58),
+    // 'venus': Color(0xFFE6E6A0),
+  };
 
   const SkyPainter({
     required this.orientation,
@@ -62,6 +71,10 @@ class SkyPainter extends CustomPainter {
       size.height / 2,
     );
 
+    /*
+     * Built once per frame and shared between
+     * star dots and constellation lines.
+     */
     final starWorldVectors =
         _starWorldVectorsById();
 
@@ -72,19 +85,32 @@ class SkyPainter extends CustomPainter {
       size,
     );
 
+    /*
+     * Draw the selected celestial object's trajectory before the
+     * object itself, so the object sits visually on top of its
+     * highlighted path. Only the selected object's trajectory is
+     * drawn — others stay hidden until selected.
+     */
     final selectedRuntime = selectedCelestialObjectId != null
         ? celestialRuntimes[selectedCelestialObjectId]
         : null;
 
     if (selectedRuntime != null && selectedRuntime.trajectory.isNotEmpty) {
+      // Look up the colour for this body; fallback to white.
+      final color = _trajectoryColors[selectedCelestialObjectId!] ?? Colors.white;
       _drawTrajectory(
         canvas,
         selectedRuntime.trajectory,
         center,
         size,
+        color,
       );
     }
 
+    /*
+     * Draw celestial objects before the stars so the star field
+     * remains visually rich around them.
+     */
     _drawCelestialObjects(
       canvas,
       center,
@@ -105,8 +131,11 @@ class SkyPainter extends CustomPainter {
       );
     }
 
-    // The selected star's constellation is always shown brighter,
-    // even when normal constellation rendering is disabled.
+    /*
+     * The selected star's constellation is always
+     * shown brighter, even if normal constellation
+     * rendering is disabled.
+     */
     final highlightedConstellation =
         _selectedConstellation();
 
@@ -134,6 +163,9 @@ class SkyPainter extends CustomPainter {
       );
     }
 
+    /*
+     * Keep the aiming point above everything else.
+     */
     _drawCenterMarker(
       canvas,
       size,
@@ -212,44 +244,49 @@ class SkyPainter extends CustomPainter {
     return point;
   }
 
-  /// Draws the selected celestial object's apparent sky trajectory —
-  /// the sequence of sky directions it passes through over the sampled
-  /// time window.
+  /// Draws the selected celestial object's apparent sky trajectory.
+  ///
+  /// This is NOT the physical orbit of the object — it's the sequence
+  /// of sky directions it passes through over the sampled time window.
   void _drawTrajectory(
     Canvas canvas,
     CelestialTrajectory trajectory,
     Offset center,
     Size size,
+    Color color, // new parameter
   ) {
     if (trajectory.points.length < 2) {
       return;
     }
 
+    /*
+     * Soft outer glow – tinted with the object's colour.
+     */
     final glowPaint = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = 6.0
       ..strokeCap = StrokeCap.round
-      ..color = const Color(
-        0xFFFFB300,
-      ).withValues(
+      ..color = color.withValues(
         alpha: 0.08,
       );
 
+    /*
+     * Main trajectory line.
+     */
     final trajectoryPaint = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.4
       ..strokeCap = StrokeCap.round
-      ..color = const Color(
-        0xFFFFD95A,
-      ).withValues(
+      ..color = color.withValues(
         alpha: 0.70,
       );
 
+    /*
+     * Small points sampled along the trajectory.
+     */
     final pointPaint = Paint()
       ..style = PaintingStyle.fill
-      ..color = const Color(
-        0xFFFFD95A,
-      ).withValues(
+      ..color = color.withValues(
         alpha: 0.55,
       );
 
@@ -263,10 +300,8 @@ class SkyPainter extends CustomPainter {
           trajectory.points[i + 1];
 
       /*
-       * Use the same camera-plane clipping as constellation lines:
-       * a plain drawLine() between projected points would draw
-       * incorrect lines where the trajectory crosses behind the
-       * observer.
+       * Use the same camera-plane clipping used
+       * by constellation lines.
        */
       final segment =
           _projectConstellationSegment(
@@ -293,6 +328,9 @@ class SkyPainter extends CustomPainter {
       );
     }
 
+    /*
+     * Draw the trajectory sample points.
+     */
     for (final world
         in trajectory.points) {
       final point = _projectStar(
@@ -315,6 +353,9 @@ class SkyPainter extends CustomPainter {
 
   /// Draws every registered celestial body that has a computed runtime
   /// position, dispatching to the appropriate visual by [body.type].
+  ///
+  /// Adding Moon/Mars/Venus later means adding a case here — nothing
+  /// about how objects reach this point changes.
   void _drawCelestialObjects(
     Canvas canvas,
     Offset center,
@@ -340,6 +381,16 @@ class SkyPainter extends CustomPainter {
           );
           break;
 
+        case CelestialObjectType.moon:
+          _drawMoon(
+            canvas,
+            runtime.vector,
+            center,
+            size,
+            isSelected: isSelected,
+          );
+          break;
+
         default:
           _drawGenericCelestialMarker(
             canvas,
@@ -350,6 +401,126 @@ class SkyPainter extends CustomPainter {
           );
       }
     }
+  }
+
+  /// Deliberately a plain circle, not yet an illuminated crescent/gibbous
+  /// shape — verify the Moon's *position* tracks correctly first (the
+  /// thing that's actually easy to get subtly wrong: parallax, hour
+  /// angle, obliquity). Phase-accurate rendering is a separate, purely
+  /// cosmetic follow-up once position is confirmed against a real sky
+  /// app.
+  /// Draws the Moon with a deliberately different visual language from the Sun.
+  ///
+  /// The Sun is warm, energetic and strongly glowing. The Moon is cool,
+  /// quieter and slightly smaller, with a soft halo and subtle surface
+  /// detail. The actual illuminated phase is kept out of this method until
+  /// the Moon phase fraction is passed into the painter.
+  void _drawMoon(
+    Canvas canvas,
+    WorldVector world,
+    Offset center,
+    Size size, {
+    required bool isSelected,
+  }) {
+    final point = _projectStar(
+      world,
+      center,
+      size,
+    );
+
+    if (point == null) {
+      return;
+    }
+
+    // Cool, restrained halo. This intentionally contrasts with the
+    // stronger yellow/orange Sun glow.
+    final haloPaint = Paint()
+      ..style = PaintingStyle.fill
+      ..color = const Color(
+        0xFFBFD4E6,
+      ).withValues(
+        alpha: isSelected ? 0.18 : 0.10,
+      );
+
+    canvas.drawCircle(
+      point,
+      isSelected ? 16.0 : 13.0,
+      haloPaint,
+    );
+
+    // Selection ring.
+    if (isSelected) {
+      final selectionPaint = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.4
+        ..color = const Color(
+          0xFFE8F1F8,
+        ).withValues(alpha: 0.9);
+
+      canvas.drawCircle(
+        point,
+        10.5,
+        selectionPaint,
+      );
+    }
+
+    // Main lunar disk.
+    final moonPaint = Paint()
+      ..style = PaintingStyle.fill
+      ..color = const Color(
+        0xFFE8ECF1,
+      );
+
+    canvas.drawCircle(
+      point,
+      6.0,
+      moonPaint,
+    );
+
+    // Very subtle surface shading. This is intentionally not presented as
+    // the real lunar phase; the phase geometry will be driven by the
+    // calculated illuminated fraction once that value is supplied to the
+    // painter.
+    final shadePaint = Paint()
+      ..style = PaintingStyle.fill
+      ..color = const Color(
+        0xFF8996A3,
+      ).withValues(alpha: 0.18);
+
+    canvas.drawCircle(
+      Offset(
+        point.dx - 1.5,
+        point.dy + 0.5,
+      ),
+      2.2,
+      shadePaint,
+    );
+
+    // A couple of tiny crater hints keep the Moon visually distinct without
+    // turning it into a detailed texture.
+    final craterPaint = Paint()
+      ..style = PaintingStyle.fill
+      ..color = const Color(
+        0xFF7F8B97,
+      ).withValues(alpha: 0.18);
+
+    canvas.drawCircle(
+      Offset(
+        point.dx + 1.7,
+        point.dy - 1.5,
+      ),
+      0.8,
+      craterPaint,
+    );
+
+    canvas.drawCircle(
+      Offset(
+        point.dx + 0.7,
+        point.dy + 2.0,
+      ),
+      0.65,
+      craterPaint,
+    );
   }
 
   void _drawSun(
@@ -369,8 +540,13 @@ class SkyPainter extends CustomPainter {
       return;
     }
 
-    // The Sun is drawn much larger than its real angular size —
-    // this is a UI marker, not a physical disk.
+    /*
+     * When selected, increase the Sun's visual presence.
+     *
+     * The visual size is deliberately much larger than
+     * the real angular size of the Sun. This is a UI marker,
+     * not a physical disk.
+     */
     final glowRadius =
         isSelected ? 34.0 : 26.0;
 
@@ -408,6 +584,9 @@ class SkyPainter extends CustomPainter {
       outerGlowPaint,
     );
 
+    /*
+     * Selected Sun gets a subtle ring.
+     */
     if (isSelected) {
       final selectionPaint = Paint()
         ..style = PaintingStyle.stroke
@@ -450,8 +629,9 @@ class SkyPainter extends CustomPainter {
     );
   }
 
-  /// Fallback visual for celestial body types without a dedicated
-  /// rendering case.
+  /// Fallback visual for celestial body types without dedicated
+  /// rendering yet (used once Moon/Mars/Venus are registered but
+  /// before each gets its own case in [_drawCelestialObjects]).
   void _drawGenericCelestialMarker(
     Canvas canvas,
     WorldVector world,

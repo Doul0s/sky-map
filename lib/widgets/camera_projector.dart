@@ -21,9 +21,10 @@ class CameraPoint {
 /// Converts world-space unit vectors (X = North, Y = East, Z = Up) into
 /// screen coordinates for the current device orientation.
 ///
-/// This is the one place the world -> camera -> screen transform lives;
-/// SkyPainter (rendering) and StarHitTester (tap detection) share it so
-/// their math stays in sync.
+/// This is the one place the world -> camera -> screen transform lives.
+/// SkyPainter (rendering, every frame) and StarHitTester (tap detection,
+/// on tap) both need the exact same math to stay in sync — previously
+/// each reimplemented it independently.
 class CameraProjector {
   CameraProjector._();
 
