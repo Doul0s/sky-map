@@ -35,11 +35,15 @@ class SkyPainter extends CustomPainter {
 
   // Static colour map for trajectory hues, keyed by celestial body id.
   static const Map<String, Color> _trajectoryColors = {
-    'sun': Color(0xFFFFB300),   // warm gold
-    'moon': Color(0xFFB0C4DE),  // cool silver‑blue
-    // Add planets later, e.g.:
-    // 'mars': Color(0xFFE27B58),
-    // 'venus': Color(0xFFE6E6A0),
+    'sun': Color(0xFFFFB300),      // warm gold
+    'moon': Color(0xFFB0C4DE),     // cool silver‑blue
+    'mercury': Color(0xFFB8B0A8),  // pale grey
+    'venus': Color(0xFFE6E6A0),    // pale yellow
+    'mars': Color(0xFFE27B58),     // rust orange
+    'jupiter': Color(0xFFE0C097),  // banded tan
+    'saturn': Color(0xFFEAD6A5),   // pale gold
+    'uranus': Color(0xFF9FE0E0),   // pale cyan
+    'neptune': Color(0xFF6B8FE0),  // deep blue
   };
 
   const SkyPainter({
@@ -392,11 +396,13 @@ class SkyPainter extends CustomPainter {
           break;
 
         default:
-          _drawGenericCelestialMarker(
+          _drawPlanet(
             canvas,
             runtime.vector,
             center,
             size,
+            id: body.id,
+            color: _trajectoryColors[body.id] ?? Colors.white,
             isSelected: isSelected,
           );
       }
@@ -629,14 +635,19 @@ class SkyPainter extends CustomPainter {
     );
   }
 
-  /// Fallback visual for celestial body types without dedicated
-  /// rendering yet (used once Moon/Mars/Venus are registered but
-  /// before each gets its own case in [_drawCelestialObjects]).
-  void _drawGenericCelestialMarker(
+  /// Visual for every planet: a shaded disk rather than a flat dot, so
+  /// each body reads as a small sphere instead of a marker pin. Kept
+  /// deliberately simple — no textures, just a halo, a base colour, a
+  /// darker "terminator" shadow on one side, and a small highlight on
+  /// the other. Saturn additionally gets a ring, since that's the one
+  /// feature that would otherwise make it unrecognisable at this scale.
+  void _drawPlanet(
     Canvas canvas,
     WorldVector world,
     Offset center,
     Size size, {
+    required String id,
+    required Color color,
     required bool isSelected,
   }) {
     final point = _projectStar(
@@ -649,6 +660,30 @@ class SkyPainter extends CustomPainter {
       return;
     }
 
+    final radius = _planetRadius(id);
+
+    // Soft halo, tinted by the planet's own colour.
+    final haloPaint = Paint()
+      ..style = PaintingStyle.fill
+      ..color = color.withValues(alpha: isSelected ? 0.20 : 0.12);
+
+    canvas.drawCircle(
+      point,
+      radius * 2.6,
+      haloPaint,
+    );
+
+    // Saturn's rings sit behind the disk, so the disk covers their
+    // middle third — the classic simple "ringed planet" silhouette.
+    if (id == 'saturn') {
+      _drawSaturnRing(
+        canvas,
+        point,
+        radius,
+        color,
+      );
+    }
+
     if (isSelected) {
       final selectionPaint = Paint()
         ..style = PaintingStyle.stroke
@@ -657,20 +692,106 @@ class SkyPainter extends CustomPainter {
 
       canvas.drawCircle(
         point,
-        10,
+        radius + 6,
         selectionPaint,
       );
     }
 
-    final markerPaint = Paint()
+    final basePaint = Paint()
       ..style = PaintingStyle.fill
-      ..color = Colors.white;
+      ..color = color;
 
     canvas.drawCircle(
       point,
-      4,
-      markerPaint,
+      radius,
+      basePaint,
     );
+
+    // Darker "terminator" shading on one side of the disk, hinting at a
+    // lit sphere rather than a flat circle. Clipped to the disk itself
+    // so it never bleeds past the planet's edge.
+    canvas.save();
+    canvas.clipPath(
+      Path()
+        ..addOval(
+          Rect.fromCircle(center: point, radius: radius),
+        ),
+    );
+
+    final shadowPaint = Paint()
+      ..style = PaintingStyle.fill
+      ..color = Colors.black.withValues(alpha: 0.30);
+
+    canvas.drawCircle(
+      point.translate(radius * 0.55, radius * 0.4),
+      radius * 1.05,
+      shadowPaint,
+    );
+
+    canvas.restore();
+
+    // Small highlight, opposite the shadow.
+    final highlightPaint = Paint()
+      ..style = PaintingStyle.fill
+      ..color = Colors.white.withValues(alpha: 0.35);
+
+    canvas.drawCircle(
+      point.translate(-radius * 0.35, -radius * 0.35),
+      radius * 0.35,
+      highlightPaint,
+    );
+  }
+
+  /// Base disk radius per planet — enough variation to hint that
+  /// Jupiter/Saturn are larger than Mercury/Mars, without turning this
+  /// into a scale model.
+  double _planetRadius(String id) {
+    switch (id) {
+      case 'jupiter':
+        return 4.4;
+      case 'saturn':
+        return 4.0;
+      case 'venus':
+        return 3.4;
+      case 'uranus':
+      case 'neptune':
+        return 3.0;
+      case 'mars':
+        return 2.8;
+      case 'mercury':
+        return 2.4;
+      default:
+        return 3.0;
+    }
+  }
+
+  /// A simple tilted ring, drawn as a stroked oval behind the planet's
+  /// disk so the disk hides its middle section.
+  void _drawSaturnRing(
+    Canvas canvas,
+    Offset point,
+    double radius,
+    Color color,
+  ) {
+    final ringPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = radius * 0.35
+      ..color = color.withValues(alpha: 0.55);
+
+    final ringRect = Rect.fromCenter(
+      center: point,
+      width: radius * 3.6,
+      height: radius * 1.1,
+    );
+
+    canvas.save();
+    canvas.translate(point.dx, point.dy);
+    canvas.rotate(-0.35);
+    canvas.translate(-point.dx, -point.dy);
+
+    canvas.drawOval(ringRect, ringPaint);
+
+    canvas.restore();
   }
 
   void _drawConstellations(
