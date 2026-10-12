@@ -1,4 +1,4 @@
-package com.example.skymap
+package app.doulos.skymap
 
 import android.content.Context
 import android.hardware.Sensor
