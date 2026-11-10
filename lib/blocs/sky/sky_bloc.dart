@@ -83,7 +83,7 @@ class SkyBloc extends Bloc<SkyEvent, SkyState> {
     emit(
       state.copyWith(
         status: SkyStatus.loading,
-        errorMessage: null,
+        clearError: true,
       ),
     );
 

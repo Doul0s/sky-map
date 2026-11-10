@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:geolocator/geolocator.dart';
 
 import '../blocs/sky/sky_bloc.dart';
 import '../blocs/sky/sky_event.dart';
@@ -56,6 +57,9 @@ class _SkyView extends StatelessWidget {
               message:
                   state.errorMessage ??
                   'Something went wrong.',
+              onRetry: () => context
+                  .read<SkyBloc>()
+                  .add(const SkyLoadRequested()),
             );
 
           case SkyStatus.loaded:
@@ -84,9 +88,11 @@ class _LoadingView extends StatelessWidget {
 
 class _ErrorView extends StatelessWidget {
   final String message;
+  final VoidCallback onRetry;
 
   const _ErrorView({
     required this.message,
+    required this.onRetry,
   });
 
   @override
@@ -96,12 +102,26 @@ class _ErrorView extends StatelessWidget {
       body: Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
-          child: Text(
-            message,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: Colors.white70,
-            ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                message,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: Colors.white70,
+                ),
+              ),
+              const SizedBox(height: 20),
+              FilledButton(
+                onPressed: onRetry,
+                child: const Text('Try again'),
+              ),
+              TextButton(
+                onPressed: Geolocator.openAppSettings,
+                child: const Text('Open settings'),
+              ),
+            ],
           ),
         ),
       ),

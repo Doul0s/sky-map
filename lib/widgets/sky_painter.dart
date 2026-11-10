@@ -176,8 +176,15 @@ class SkyPainter extends CustomPainter {
     );
   }
 
+  static List<WorldVector>? _cachedVectors;
+  static Map<int, List<double>>? _cachedById;
+
   Map<int, List<double>>
       _starWorldVectorsById() {
+    if (identical(_cachedVectors, starVectors)) {
+      return _cachedById!;
+    }
+
     final result =
         <int, List<double>>{};
 
@@ -191,7 +198,9 @@ class SkyPainter extends CustomPainter {
           starVectors[i];
     }
 
-    return result;
+    _cachedVectors = starVectors;
+
+    return _cachedById = result;
   }
 
   Map<int, Offset> _projectStars(
@@ -225,7 +234,7 @@ class SkyPainter extends CustomPainter {
     Size size,
   ) {
     final focalLength =
-        size.height * 0.5;
+        CameraProjector.focalLength(size);
 
     final point = CameraProjector.project(
       world,
@@ -984,7 +993,7 @@ class SkyPainter extends CustomPainter {
     }
 
     final focalLength =
-        size.height * 0.5;
+        CameraProjector.focalLength(size);
 
     final firstPoint =
         CameraProjector.projectCameraPoint(

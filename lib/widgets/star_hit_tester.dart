@@ -41,7 +41,7 @@ class StarHitTester {
     required Offset center,
     required Size size,
   }) {
-    final focalLength = size.height * 0.5;
+    final focalLength = CameraProjector.focalLength(size);
 
     SkyTapResult? best;
     var bestDistanceSq = double.infinity;

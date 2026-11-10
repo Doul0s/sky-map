@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../models/device_orientation.dart';
@@ -27,6 +29,9 @@ class CameraPoint {
 /// each reimplemented it independently.
 class CameraProjector {
   CameraProjector._();
+
+  static double focalLength(Size size) =>
+      math.max(size.width, size.height) * 0.5;
 
   static CameraPoint toCameraSpace(
     List<double> world,

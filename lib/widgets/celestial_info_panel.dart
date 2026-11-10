@@ -38,16 +38,17 @@ class CelestialInfoPanel extends StatelessWidget {
                   width: 1,
                 ),
               ),
-              child: SizedBox.expand(
+              child: SizedBox(
+                width: double.infinity,
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
                   child: Column(
-                    mainAxisSize: MainAxisSize.max,
+                    mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       _Header(object: object, onClose: onClose),
                       const SizedBox(height: 10),
-                      Expanded(
+                      Flexible(
                         child: SingleChildScrollView(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,

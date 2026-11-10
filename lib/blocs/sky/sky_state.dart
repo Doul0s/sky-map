@@ -164,6 +164,7 @@ class SkyState extends Equatable {
     String? selectedCelestialObjectId,
     bool clearStarSelection = false,
     bool clearCelestialSelection = false,
+    bool clearError = false,
   }) {
     return SkyState(
       status: status ?? this.status,
@@ -184,7 +185,10 @@ class SkyState extends Equatable {
 
       lastPositionUpdate: lastPositionUpdate ?? this.lastPositionUpdate,
 
-      errorMessage: errorMessage,
+      // An error can only be cleared explicitly; otherwise any unrelated
+      // event (e.g. an orientation update) would silently wipe it.
+      errorMessage:
+          clearError ? null : (errorMessage ?? this.errorMessage),
 
       showHorizon: showHorizon ?? this.showHorizon,
 
